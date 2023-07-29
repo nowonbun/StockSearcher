@@ -1,0 +1,119 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Schema Namespace="stocksearcherModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2012" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+  <EntityType Name="stocklist">
+    <Key>
+      <PropertyRef Name="code" />
+    </Key>
+    <Property Name="code" Type="nvarchar" MaxLength="10" Nullable="false" />
+    <Property Name="date" Type="nvarchar" MaxLength="8" />
+    <Property Name="name" Type="nvarchar" MaxLength="100" />
+    <Property Name="stockcode" Type="int" />
+    <Property Name="type33code" Type="nvarchar" MaxLength="10" />
+    <Property Name="type17code" Type="nvarchar" MaxLength="10" />
+    <Property Name="typescalecode" Type="nvarchar" MaxLength="10" />
+    <Property Name="isuse" Type="bit" />
+  </EntityType>
+  <EntityType Name="stocktype">
+    <Key>
+      <PropertyRef Name="stockcode" />
+    </Key>
+    <Property Name="stockcode" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+    <Property Name="stocktype" Type="nvarchar" MaxLength="100" />
+    <Property Name="isuse" Type="bit" />
+  </EntityType>
+  <EntityType Name="type17">
+    <Key>
+      <PropertyRef Name="type17code" />
+    </Key>
+    <Property Name="type17code" Type="nvarchar" MaxLength="10" Nullable="false" />
+    <Property Name="type17name" Type="nvarchar" MaxLength="100" />
+    <Property Name="isuse" Type="bit" />
+  </EntityType>
+  <EntityType Name="type33">
+    <Key>
+      <PropertyRef Name="type33code" />
+    </Key>
+    <Property Name="type33code" Type="nvarchar" MaxLength="10" Nullable="false" />
+    <Property Name="type33name" Type="nvarchar" MaxLength="100" />
+    <Property Name="isuse" Type="bit" />
+  </EntityType>
+  <EntityType Name="typescale">
+    <Key>
+      <PropertyRef Name="typescalecode" />
+    </Key>
+    <Property Name="typescalecode" Type="nvarchar" MaxLength="10" Nullable="false" />
+    <Property Name="typescalename" Type="nvarchar" MaxLength="100" />
+    <Property Name="isuse" Type="bit" />
+  </EntityType>
+  <Association Name="FK__stocklist__stock__4222D4EF">
+    <End Role="stocktype" Type="Self.stocktype" Multiplicity="0..1" />
+    <End Role="stocklist" Type="Self.stocklist" Multiplicity="*" />
+    <ReferentialConstraint>
+      <Principal Role="stocktype">
+        <PropertyRef Name="stockcode" />
+      </Principal>
+      <Dependent Role="stocklist">
+        <PropertyRef Name="stockcode" />
+      </Dependent>
+    </ReferentialConstraint>
+  </Association>
+  <Association Name="FK__stocklist__type1__440B1D61">
+    <End Role="type17" Type="Self.type17" Multiplicity="0..1" />
+    <End Role="stocklist" Type="Self.stocklist" Multiplicity="*" />
+    <ReferentialConstraint>
+      <Principal Role="type17">
+        <PropertyRef Name="type17code" />
+      </Principal>
+      <Dependent Role="stocklist">
+        <PropertyRef Name="type17code" />
+      </Dependent>
+    </ReferentialConstraint>
+  </Association>
+  <Association Name="FK__stocklist__type3__4316F928">
+    <End Role="type33" Type="Self.type33" Multiplicity="0..1" />
+    <End Role="stocklist" Type="Self.stocklist" Multiplicity="*" />
+    <ReferentialConstraint>
+      <Principal Role="type33">
+        <PropertyRef Name="type33code" />
+      </Principal>
+      <Dependent Role="stocklist">
+        <PropertyRef Name="type33code" />
+      </Dependent>
+    </ReferentialConstraint>
+  </Association>
+  <Association Name="FK__stocklist__types__44FF419A">
+    <End Role="typescale" Type="Self.typescale" Multiplicity="0..1" />
+    <End Role="stocklist" Type="Self.stocklist" Multiplicity="*" />
+    <ReferentialConstraint>
+      <Principal Role="typescale">
+        <PropertyRef Name="typescalecode" />
+      </Principal>
+      <Dependent Role="stocklist">
+        <PropertyRef Name="typescalecode" />
+      </Dependent>
+    </ReferentialConstraint>
+  </Association>
+  <EntityContainer Name="stocksearcherModelStoreContainer">
+    <EntitySet Name="stocklist" EntityType="Self.stocklist" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="stocktype" EntityType="Self.stocktype" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="type17" EntityType="Self.type17" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="type33" EntityType="Self.type33" Schema="dbo" store:Type="Tables" />
+    <EntitySet Name="typescale" EntityType="Self.typescale" Schema="dbo" store:Type="Tables" />
+    <AssociationSet Name="FK__stocklist__stock__4222D4EF" Association="Self.FK__stocklist__stock__4222D4EF">
+      <End Role="stocktype" EntitySet="stocktype" />
+      <End Role="stocklist" EntitySet="stocklist" />
+    </AssociationSet>
+    <AssociationSet Name="FK__stocklist__type1__440B1D61" Association="Self.FK__stocklist__type1__440B1D61">
+      <End Role="type17" EntitySet="type17" />
+      <End Role="stocklist" EntitySet="stocklist" />
+    </AssociationSet>
+    <AssociationSet Name="FK__stocklist__type3__4316F928" Association="Self.FK__stocklist__type3__4316F928">
+      <End Role="type33" EntitySet="type33" />
+      <End Role="stocklist" EntitySet="stocklist" />
+    </AssociationSet>
+    <AssociationSet Name="FK__stocklist__types__44FF419A" Association="Self.FK__stocklist__types__44FF419A">
+      <End Role="typescale" EntitySet="typescale" />
+      <End Role="stocklist" EntitySet="stocklist" />
+    </AssociationSet>
+  </EntityContainer>
+</Schema>

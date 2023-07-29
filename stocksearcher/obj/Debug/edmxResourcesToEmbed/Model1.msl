@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Mapping Space="C-S" xmlns="http://schemas.microsoft.com/ado/2009/11/mapping/cs">
+  <EntityContainerMapping StorageEntityContainer="stocksearcherModelStoreContainer" CdmEntityContainer="stocksearcherEntities1">
+    <EntitySetMapping Name="stocklist">
+      <EntityTypeMapping TypeName="stocksearcherModel.stocklist">
+        <MappingFragment StoreEntitySet="stocklist">
+          <ScalarProperty Name="isuse" ColumnName="isuse" />
+          <ScalarProperty Name="typescalecode" ColumnName="typescalecode" />
+          <ScalarProperty Name="type17code" ColumnName="type17code" />
+          <ScalarProperty Name="type33code" ColumnName="type33code" />
+          <ScalarProperty Name="stockcode" ColumnName="stockcode" />
+          <ScalarProperty Name="name" ColumnName="name" />
+          <ScalarProperty Name="date" ColumnName="date" />
+          <ScalarProperty Name="code" ColumnName="code" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="stocktype">
+      <EntityTypeMapping TypeName="stocksearcherModel.stocktype">
+        <MappingFragment StoreEntitySet="stocktype">
+          <ScalarProperty Name="isuse" ColumnName="isuse" />
+          <ScalarProperty Name="stocktype1" ColumnName="stocktype" />
+          <ScalarProperty Name="stockcode" ColumnName="stockcode" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="type17">
+      <EntityTypeMapping TypeName="stocksearcherModel.type17">
+        <MappingFragment StoreEntitySet="type17">
+          <ScalarProperty Name="isuse" ColumnName="isuse" />
+          <ScalarProperty Name="type17name" ColumnName="type17name" />
+          <ScalarProperty Name="type17code" ColumnName="type17code" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="type33">
+      <EntityTypeMapping TypeName="stocksearcherModel.type33">
+        <MappingFragment StoreEntitySet="type33">
+          <ScalarProperty Name="isuse" ColumnName="isuse" />
+          <ScalarProperty Name="type33name" ColumnName="type33name" />
+          <ScalarProperty Name="type33code" ColumnName="type33code" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="typescale">
+      <EntityTypeMapping TypeName="stocksearcherModel.typescale">
+        <MappingFragment StoreEntitySet="typescale">
+          <ScalarProperty Name="isuse" ColumnName="isuse" />
+          <ScalarProperty Name="typescalename" ColumnName="typescalename" />
+          <ScalarProperty Name="typescalecode" ColumnName="typescalecode" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+  </EntityContainerMapping>
+</Mapping>
