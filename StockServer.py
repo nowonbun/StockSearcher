@@ -6,7 +6,8 @@ import json
 from yahoo_finance_api2 import share
 from yahoo_finance_api2.exceptions import YahooFinanceError
 
-
+# https://pypi.org/project/yahoo-finance-api2/
+# http://localhost/?stock=1301.T&periodType=year&period=1&frequencyType=day&frequency=1
 class myHandler(BaseHTTPRequestHandler):
     def __get_Parameter(self, key):
         if hasattr(self, "_myHandler__param") == False:

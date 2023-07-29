@@ -14,6 +14,12 @@ namespace stocksearcher
     
     public partial class stocklist
     {
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2214:DoNotCallOverridableMethodsInConstructors")]
+        public stocklist()
+        {
+            this.stockdata = new HashSet<stockdata>();
+        }
+    
         public string code { get; set; }
         public string date { get; set; }
         public string name { get; set; }
@@ -27,5 +33,7 @@ namespace stocksearcher
         public virtual type17 type17 { get; set; }
         public virtual type33 type33 { get; set; }
         public virtual typescale typescale { get; set; }
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
+        public virtual ICollection<stockdata> stockdata { get; set; }
     }
 }

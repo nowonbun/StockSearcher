@@ -14,6 +14,9 @@
         <AssociationConnector Association="stocksearcherModel.FK__stocklist__type1__440B1D61" />
         <AssociationConnector Association="stocksearcherModel.FK__stocklist__type3__4316F928" />
         <AssociationConnector Association="stocksearcherModel.FK__stocklist__types__44FF419A" />
+        <EntityTypeShape EntityType="stocksearcherModel.stockdata" Width="1.5" PointX="5.25" PointY="1.25" />
+        <AssociationConnector Association="stocksearcherModel.FK__stockdata__code__4F7CD00D" />
+        <EntityTypeShape EntityType="stocksearcherModel.error" Width="1.5" PointX="3.375" PointY="5.75" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

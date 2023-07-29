@@ -5,6 +5,30 @@
     <!-- SSDL content -->
     <edmx:StorageModels>
     <Schema Namespace="stocksearcherModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2012" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+        <EntityType Name="error">
+          <Key>
+            <PropertyRef Name="idx" />
+          </Key>
+          <Property Name="idx" Type="bigint" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="code" Type="nvarchar" MaxLength="10" />
+          <Property Name="occured_date" Type="date" />
+          <Property Name="error_message" Type="nvarchar" MaxLength="3000" />
+        </EntityType>
+        <EntityType Name="stockdata">
+          <Key>
+            <PropertyRef Name="code" />
+            <PropertyRef Name="timestamp" />
+          </Key>
+          <Property Name="code" Type="nvarchar" MaxLength="10" Nullable="false" />
+          <Property Name="timestamp" Type="bigint" Nullable="false" />
+          <Property Name="date" Type="date" />
+          <Property Name="open_price" Type="bigint" />
+          <Property Name="high_price" Type="bigint" />
+          <Property Name="low_price" Type="bigint" />
+          <Property Name="closed_price" Type="bigint" />
+          <Property Name="volume_price" Type="bigint" />
+          <Property Name="isuse" Type="bit" />
+        </EntityType>
         <EntityType Name="stocklist">
           <Key>
             <PropertyRef Name="code" />
@@ -50,6 +74,18 @@
           <Property Name="typescalename" Type="nvarchar" MaxLength="100" />
           <Property Name="isuse" Type="bit" />
         </EntityType>
+        <Association Name="FK__stockdata__code__4F7CD00D">
+          <End Role="stocklist" Type="Self.stocklist" Multiplicity="1" />
+          <End Role="stockdata" Type="Self.stockdata" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="stocklist">
+              <PropertyRef Name="code" />
+            </Principal>
+            <Dependent Role="stockdata">
+              <PropertyRef Name="code" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK__stocklist__stock__4222D4EF">
           <End Role="stocktype" Type="Self.stocktype" Multiplicity="0..1" />
           <End Role="stocklist" Type="Self.stocklist" Multiplicity="*" />
@@ -99,11 +135,17 @@
           </ReferentialConstraint>
         </Association>
         <EntityContainer Name="stocksearcherModelStoreContainer">
+          <EntitySet Name="error" EntityType="Self.error" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="stockdata" EntityType="Self.stockdata" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="stocklist" EntityType="Self.stocklist" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="stocktype" EntityType="Self.stocktype" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="type17" EntityType="Self.type17" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="type33" EntityType="Self.type33" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="typescale" EntityType="Self.typescale" Schema="dbo" store:Type="Tables" />
+          <AssociationSet Name="FK__stockdata__code__4F7CD00D" Association="Self.FK__stockdata__code__4F7CD00D">
+            <End Role="stocklist" EntitySet="stocklist" />
+            <End Role="stockdata" EntitySet="stockdata" />
+          </AssociationSet>
           <AssociationSet Name="FK__stocklist__stock__4222D4EF" Association="Self.FK__stocklist__stock__4222D4EF">
             <End Role="stocktype" EntitySet="stocktype" />
             <End Role="stocklist" EntitySet="stocklist" />
@@ -147,6 +189,12 @@
             <End Role="typescale" EntitySet="typescale" />
             <End Role="stocklist" EntitySet="stocklist" />
           </AssociationSet>
+          <EntitySet Name="stockdata" EntityType="stocksearcherModel.stockdata" />
+          <AssociationSet Name="FK__stockdata__code__4F7CD00D" Association="stocksearcherModel.FK__stockdata__code__4F7CD00D">
+            <End Role="stocklist" EntitySet="stocklist" />
+            <End Role="stockdata" EntitySet="stockdata" />
+          </AssociationSet>
+          <EntitySet Name="error" EntityType="stocksearcherModel.error" />
         </EntityContainer>
         <EntityType Name="stocklist">
           <Key>
@@ -164,6 +212,7 @@
           <NavigationProperty Name="type17" Relationship="stocksearcherModel.FK__stocklist__type1__440B1D61" FromRole="stocklist" ToRole="type17" />
           <NavigationProperty Name="type33" Relationship="stocksearcherModel.FK__stocklist__type3__4316F928" FromRole="stocklist" ToRole="type33" />
           <NavigationProperty Name="typescale" Relationship="stocksearcherModel.FK__stocklist__types__44FF419A" FromRole="stocklist" ToRole="typescale" />
+          <NavigationProperty Name="stockdata" Relationship="stocksearcherModel.FK__stockdata__code__4F7CD00D" FromRole="stocklist" ToRole="stockdata" />
         </EntityType>
         <EntityType Name="stocktype">
           <Key>
@@ -249,6 +298,43 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="stockdata">
+          <Key>
+            <PropertyRef Name="code" />
+            <PropertyRef Name="timestamp" />
+          </Key>
+          <Property Name="code" Type="String" Nullable="false" MaxLength="10" FixedLength="false" Unicode="true" />
+          <Property Name="timestamp" Type="Int64" Nullable="false" />
+          <Property Name="date" Type="DateTime" Precision="0" />
+          <Property Name="open_price" Type="Int64" />
+          <Property Name="high_price" Type="Int64" />
+          <Property Name="low_price" Type="Int64" />
+          <Property Name="closed_price" Type="Int64" />
+          <Property Name="volume_price" Type="Int64" />
+          <Property Name="isuse" Type="Boolean" />
+          <NavigationProperty Name="stocklist" Relationship="stocksearcherModel.FK__stockdata__code__4F7CD00D" FromRole="stockdata" ToRole="stocklist" />
+        </EntityType>
+        <Association Name="FK__stockdata__code__4F7CD00D">
+          <End Type="stocksearcherModel.stocklist" Role="stocklist" Multiplicity="1" />
+          <End Type="stocksearcherModel.stockdata" Role="stockdata" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="stocklist">
+              <PropertyRef Name="code" />
+            </Principal>
+            <Dependent Role="stockdata">
+              <PropertyRef Name="code" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="error">
+          <Key>
+            <PropertyRef Name="idx" />
+          </Key>
+          <Property Name="idx" Type="Int64" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="code" Type="String" MaxLength="10" FixedLength="false" Unicode="true" />
+          <Property Name="occured_date" Type="DateTime" Precision="0" />
+          <Property Name="error_message" Type="String" MaxLength="3000" FixedLength="false" Unicode="true" />
+        </EntityType>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -302,6 +388,31 @@
                 <ScalarProperty Name="isuse" ColumnName="isuse" />
                 <ScalarProperty Name="typescalename" ColumnName="typescalename" />
                 <ScalarProperty Name="typescalecode" ColumnName="typescalecode" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="stockdata">
+            <EntityTypeMapping TypeName="stocksearcherModel.stockdata">
+              <MappingFragment StoreEntitySet="stockdata">
+                <ScalarProperty Name="isuse" ColumnName="isuse" />
+                <ScalarProperty Name="volume_price" ColumnName="volume_price" />
+                <ScalarProperty Name="closed_price" ColumnName="closed_price" />
+                <ScalarProperty Name="low_price" ColumnName="low_price" />
+                <ScalarProperty Name="high_price" ColumnName="high_price" />
+                <ScalarProperty Name="open_price" ColumnName="open_price" />
+                <ScalarProperty Name="date" ColumnName="date" />
+                <ScalarProperty Name="timestamp" ColumnName="timestamp" />
+                <ScalarProperty Name="code" ColumnName="code" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="error">
+            <EntityTypeMapping TypeName="stocksearcherModel.error">
+              <MappingFragment StoreEntitySet="error">
+                <ScalarProperty Name="error_message" ColumnName="error_message" />
+                <ScalarProperty Name="occured_date" ColumnName="occured_date" />
+                <ScalarProperty Name="code" ColumnName="code" />
+                <ScalarProperty Name="idx" ColumnName="idx" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

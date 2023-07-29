@@ -51,5 +51,30 @@
         </MappingFragment>
       </EntityTypeMapping>
     </EntitySetMapping>
+    <EntitySetMapping Name="stockdata">
+      <EntityTypeMapping TypeName="stocksearcherModel.stockdata">
+        <MappingFragment StoreEntitySet="stockdata">
+          <ScalarProperty Name="isuse" ColumnName="isuse" />
+          <ScalarProperty Name="volume_price" ColumnName="volume_price" />
+          <ScalarProperty Name="closed_price" ColumnName="closed_price" />
+          <ScalarProperty Name="low_price" ColumnName="low_price" />
+          <ScalarProperty Name="high_price" ColumnName="high_price" />
+          <ScalarProperty Name="open_price" ColumnName="open_price" />
+          <ScalarProperty Name="date" ColumnName="date" />
+          <ScalarProperty Name="timestamp" ColumnName="timestamp" />
+          <ScalarProperty Name="code" ColumnName="code" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
+    <EntitySetMapping Name="error">
+      <EntityTypeMapping TypeName="stocksearcherModel.error">
+        <MappingFragment StoreEntitySet="error">
+          <ScalarProperty Name="error_message" ColumnName="error_message" />
+          <ScalarProperty Name="occured_date" ColumnName="occured_date" />
+          <ScalarProperty Name="code" ColumnName="code" />
+          <ScalarProperty Name="idx" ColumnName="idx" />
+        </MappingFragment>
+      </EntityTypeMapping>
+    </EntitySetMapping>
   </EntityContainerMapping>
 </Mapping>

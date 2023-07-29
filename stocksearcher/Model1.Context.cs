@@ -30,5 +30,7 @@ namespace stocksearcher
         public virtual DbSet<type17> type17 { get; set; }
         public virtual DbSet<type33> type33 { get; set; }
         public virtual DbSet<typescale> typescale { get; set; }
+        public virtual DbSet<stockdata> stockdata { get; set; }
+        public virtual DbSet<error> error { get; set; }
     }
 }
