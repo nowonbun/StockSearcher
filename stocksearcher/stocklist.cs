@@ -18,6 +18,9 @@ namespace stocksearcher
         public stocklist()
         {
             this.stockdata = new HashSet<stockdata>();
+            this.bollingerbandMoveAvg = new HashSet<bollingerbandMoveAvg>();
+            this.fibonachiMoveAvg = new HashSet<fibonachiMoveAvg>();
+            this.normalMoveAvg = new HashSet<normalMoveAvg>();
         }
     
         public string code { get; set; }
@@ -35,5 +38,11 @@ namespace stocksearcher
         public virtual typescale typescale { get; set; }
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
         public virtual ICollection<stockdata> stockdata { get; set; }
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
+        public virtual ICollection<bollingerbandMoveAvg> bollingerbandMoveAvg { get; set; }
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
+        public virtual ICollection<fibonachiMoveAvg> fibonachiMoveAvg { get; set; }
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
+        public virtual ICollection<normalMoveAvg> normalMoveAvg { get; set; }
     }
 }

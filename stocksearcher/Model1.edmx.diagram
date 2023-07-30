@@ -17,6 +17,12 @@
         <EntityTypeShape EntityType="stocksearcherModel.stockdata" Width="1.5" PointX="5.25" PointY="1.25" />
         <AssociationConnector Association="stocksearcherModel.FK__stockdata__code__4F7CD00D" />
         <EntityTypeShape EntityType="stocksearcherModel.error" Width="1.5" PointX="3.375" PointY="5.75" />
+        <EntityTypeShape EntityType="stocksearcherModel.bollingerbandMoveAvg" Width="1.5" PointX="5.25" PointY="13.25" />
+        <EntityTypeShape EntityType="stocksearcherModel.fibonachiMoveAvg" Width="1.5" PointX="5.25" PointY="8.75" />
+        <AssociationConnector Association="stocksearcherModel.FK__bollingerb__code__71D1E811" />
+        <AssociationConnector Association="stocksearcherModel.FK__fibonachiM__code__693CA210" />
+        <EntityTypeShape EntityType="stocksearcherModel.normalMoveAvg" Width="1.5" PointX="5.25" PointY="17.625" />
+        <AssociationConnector Association="stocksearcherModel.FK__normalMove__code__75A278F5" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

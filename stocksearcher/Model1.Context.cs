@@ -32,5 +32,8 @@ namespace stocksearcher
         public virtual DbSet<typescale> typescale { get; set; }
         public virtual DbSet<stockdata> stockdata { get; set; }
         public virtual DbSet<error> error { get; set; }
+        public virtual DbSet<bollingerbandMoveAvg> bollingerbandMoveAvg { get; set; }
+        public virtual DbSet<fibonachiMoveAvg> fibonachiMoveAvg { get; set; }
+        public virtual DbSet<normalMoveAvg> normalMoveAvg { get; set; }
     }
 }

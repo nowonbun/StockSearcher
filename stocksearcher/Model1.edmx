@@ -5,6 +5,20 @@
     <!-- SSDL content -->
     <edmx:StorageModels>
     <Schema Namespace="stocksearcherModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2012" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+        <EntityType Name="bollingerbandMoveAvg">
+          <Key>
+            <PropertyRef Name="code" />
+            <PropertyRef Name="date" />
+          </Key>
+          <Property Name="code" Type="nvarchar" MaxLength="10" Nullable="false" />
+          <Property Name="date" Type="date" Nullable="false" />
+          <Property Name="upperline" Type="bigint" />
+          <Property Name="lowerline" Type="bigint" />
+          <Property Name="MvAvg60" Type="bigint" />
+          <Property Name="StDv" Type="bigint" />
+          <Property Name="volume_price" Type="bigint" />
+          <Property Name="isuse" Type="bit" />
+        </EntityType>
         <EntityType Name="error">
           <Key>
             <PropertyRef Name="idx" />
@@ -13,6 +27,40 @@
           <Property Name="code" Type="nvarchar" MaxLength="10" />
           <Property Name="occured_date" Type="date" />
           <Property Name="error_message" Type="nvarchar" MaxLength="3000" />
+        </EntityType>
+        <EntityType Name="fibonachiMoveAvg">
+          <Key>
+            <PropertyRef Name="code" />
+            <PropertyRef Name="date" />
+          </Key>
+          <Property Name="code" Type="nvarchar" MaxLength="10" Nullable="false" />
+          <Property Name="date" Type="date" Nullable="false" />
+          <Property Name="MvAvg5" Type="bigint" />
+          <Property Name="MvAvg8" Type="bigint" />
+          <Property Name="MvAvg13" Type="bigint" />
+          <Property Name="MvAvg21" Type="bigint" />
+          <Property Name="MvAvg34" Type="bigint" />
+          <Property Name="MvAvg55" Type="bigint" />
+          <Property Name="MvAvg89" Type="bigint" />
+          <Property Name="MvAvg144" Type="bigint" />
+          <Property Name="MvAvg233" Type="bigint" />
+          <Property Name="volume_price" Type="bigint" />
+          <Property Name="isuse" Type="bit" />
+        </EntityType>
+        <EntityType Name="normalMoveAvg">
+          <Key>
+            <PropertyRef Name="code" />
+            <PropertyRef Name="date" />
+          </Key>
+          <Property Name="code" Type="nvarchar" MaxLength="10" Nullable="false" />
+          <Property Name="date" Type="date" Nullable="false" />
+          <Property Name="MvAvg5" Type="bigint" />
+          <Property Name="MvAvg20" Type="bigint" />
+          <Property Name="MvAvg60" Type="bigint" />
+          <Property Name="MvAvg120" Type="bigint" />
+          <Property Name="MvAvg240" Type="bigint" />
+          <Property Name="volume_price" Type="bigint" />
+          <Property Name="isuse" Type="bit" />
         </EntityType>
         <EntityType Name="stockdata">
           <Key>
@@ -74,6 +122,42 @@
           <Property Name="typescalename" Type="nvarchar" MaxLength="100" />
           <Property Name="isuse" Type="bit" />
         </EntityType>
+        <Association Name="FK__bollingerb__code__71D1E811">
+          <End Role="stocklist" Type="Self.stocklist" Multiplicity="1" />
+          <End Role="bollingerbandMoveAvg" Type="Self.bollingerbandMoveAvg" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="stocklist">
+              <PropertyRef Name="code" />
+            </Principal>
+            <Dependent Role="bollingerbandMoveAvg">
+              <PropertyRef Name="code" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK__fibonachiM__code__693CA210">
+          <End Role="stocklist" Type="Self.stocklist" Multiplicity="1" />
+          <End Role="fibonachiMoveAvg" Type="Self.fibonachiMoveAvg" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="stocklist">
+              <PropertyRef Name="code" />
+            </Principal>
+            <Dependent Role="fibonachiMoveAvg">
+              <PropertyRef Name="code" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK__normalMove__code__75A278F5">
+          <End Role="stocklist" Type="Self.stocklist" Multiplicity="1" />
+          <End Role="normalMoveAvg" Type="Self.normalMoveAvg" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="stocklist">
+              <PropertyRef Name="code" />
+            </Principal>
+            <Dependent Role="normalMoveAvg">
+              <PropertyRef Name="code" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK__stockdata__code__4F7CD00D">
           <End Role="stocklist" Type="Self.stocklist" Multiplicity="1" />
           <End Role="stockdata" Type="Self.stockdata" Multiplicity="*" />
@@ -135,13 +219,28 @@
           </ReferentialConstraint>
         </Association>
         <EntityContainer Name="stocksearcherModelStoreContainer">
+          <EntitySet Name="bollingerbandMoveAvg" EntityType="Self.bollingerbandMoveAvg" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="error" EntityType="Self.error" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="fibonachiMoveAvg" EntityType="Self.fibonachiMoveAvg" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="normalMoveAvg" EntityType="Self.normalMoveAvg" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="stockdata" EntityType="Self.stockdata" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="stocklist" EntityType="Self.stocklist" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="stocktype" EntityType="Self.stocktype" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="type17" EntityType="Self.type17" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="type33" EntityType="Self.type33" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="typescale" EntityType="Self.typescale" Schema="dbo" store:Type="Tables" />
+          <AssociationSet Name="FK__bollingerb__code__71D1E811" Association="Self.FK__bollingerb__code__71D1E811">
+            <End Role="stocklist" EntitySet="stocklist" />
+            <End Role="bollingerbandMoveAvg" EntitySet="bollingerbandMoveAvg" />
+          </AssociationSet>
+          <AssociationSet Name="FK__fibonachiM__code__693CA210" Association="Self.FK__fibonachiM__code__693CA210">
+            <End Role="stocklist" EntitySet="stocklist" />
+            <End Role="fibonachiMoveAvg" EntitySet="fibonachiMoveAvg" />
+          </AssociationSet>
+          <AssociationSet Name="FK__normalMove__code__75A278F5" Association="Self.FK__normalMove__code__75A278F5">
+            <End Role="stocklist" EntitySet="stocklist" />
+            <End Role="normalMoveAvg" EntitySet="normalMoveAvg" />
+          </AssociationSet>
           <AssociationSet Name="FK__stockdata__code__4F7CD00D" Association="Self.FK__stockdata__code__4F7CD00D">
             <End Role="stocklist" EntitySet="stocklist" />
             <End Role="stockdata" EntitySet="stockdata" />
@@ -195,6 +294,21 @@
             <End Role="stockdata" EntitySet="stockdata" />
           </AssociationSet>
           <EntitySet Name="error" EntityType="stocksearcherModel.error" />
+          <EntitySet Name="bollingerbandMoveAvg" EntityType="stocksearcherModel.bollingerbandMoveAvg" />
+          <EntitySet Name="fibonachiMoveAvg" EntityType="stocksearcherModel.fibonachiMoveAvg" />
+          <AssociationSet Name="FK__bollingerb__code__71D1E811" Association="stocksearcherModel.FK__bollingerb__code__71D1E811">
+            <End Role="stocklist" EntitySet="stocklist" />
+            <End Role="bollingerbandMoveAvg" EntitySet="bollingerbandMoveAvg" />
+          </AssociationSet>
+          <AssociationSet Name="FK__fibonachiM__code__693CA210" Association="stocksearcherModel.FK__fibonachiM__code__693CA210">
+            <End Role="stocklist" EntitySet="stocklist" />
+            <End Role="fibonachiMoveAvg" EntitySet="fibonachiMoveAvg" />
+          </AssociationSet>
+          <EntitySet Name="normalMoveAvg" EntityType="stocksearcherModel.normalMoveAvg" />
+          <AssociationSet Name="FK__normalMove__code__75A278F5" Association="stocksearcherModel.FK__normalMove__code__75A278F5">
+            <End Role="stocklist" EntitySet="stocklist" />
+            <End Role="normalMoveAvg" EntitySet="normalMoveAvg" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="stocklist">
           <Key>
@@ -213,6 +327,9 @@
           <NavigationProperty Name="type33" Relationship="stocksearcherModel.FK__stocklist__type3__4316F928" FromRole="stocklist" ToRole="type33" />
           <NavigationProperty Name="typescale" Relationship="stocksearcherModel.FK__stocklist__types__44FF419A" FromRole="stocklist" ToRole="typescale" />
           <NavigationProperty Name="stockdata" Relationship="stocksearcherModel.FK__stockdata__code__4F7CD00D" FromRole="stocklist" ToRole="stockdata" />
+          <NavigationProperty Name="bollingerbandMoveAvg" Relationship="stocksearcherModel.FK__bollingerb__code__71D1E811" FromRole="stocklist" ToRole="bollingerbandMoveAvg" />
+          <NavigationProperty Name="fibonachiMoveAvg" Relationship="stocksearcherModel.FK__fibonachiM__code__693CA210" FromRole="stocklist" ToRole="fibonachiMoveAvg" />
+          <NavigationProperty Name="normalMoveAvg" Relationship="stocksearcherModel.FK__normalMove__code__75A278F5" FromRole="stocklist" ToRole="normalMoveAvg" />
         </EntityType>
         <EntityType Name="stocktype">
           <Key>
@@ -335,6 +452,93 @@
           <Property Name="occured_date" Type="DateTime" Precision="0" />
           <Property Name="error_message" Type="String" MaxLength="3000" FixedLength="false" Unicode="true" />
         </EntityType>
+        <EntityType Name="bollingerbandMoveAvg">
+          <Key>
+            <PropertyRef Name="code" />
+            <PropertyRef Name="date" />
+          </Key>
+          <Property Name="code" Type="String" Nullable="false" MaxLength="10" FixedLength="false" Unicode="true" />
+          <Property Name="date" Type="DateTime" Nullable="false" Precision="0" />
+          <Property Name="upperline" Type="Int64" />
+          <Property Name="lowerline" Type="Int64" />
+          <Property Name="MvAvg60" Type="Int64" />
+          <Property Name="StDv" Type="Int64" />
+          <Property Name="volume_price" Type="Int64" />
+          <Property Name="isuse" Type="Boolean" />
+          <NavigationProperty Name="stocklist" Relationship="stocksearcherModel.FK__bollingerb__code__71D1E811" FromRole="bollingerbandMoveAvg" ToRole="stocklist" />
+        </EntityType>
+        <EntityType Name="fibonachiMoveAvg">
+          <Key>
+            <PropertyRef Name="code" />
+            <PropertyRef Name="date" />
+          </Key>
+          <Property Name="code" Type="String" Nullable="false" MaxLength="10" FixedLength="false" Unicode="true" />
+          <Property Name="date" Type="DateTime" Nullable="false" Precision="0" />
+          <Property Name="MvAvg5" Type="Int64" />
+          <Property Name="MvAvg8" Type="Int64" />
+          <Property Name="MvAvg13" Type="Int64" />
+          <Property Name="MvAvg21" Type="Int64" />
+          <Property Name="MvAvg34" Type="Int64" />
+          <Property Name="MvAvg55" Type="Int64" />
+          <Property Name="MvAvg89" Type="Int64" />
+          <Property Name="MvAvg144" Type="Int64" />
+          <Property Name="MvAvg233" Type="Int64" />
+          <Property Name="volume_price" Type="Int64" />
+          <Property Name="isuse" Type="Boolean" />
+          <NavigationProperty Name="stocklist" Relationship="stocksearcherModel.FK__fibonachiM__code__693CA210" FromRole="fibonachiMoveAvg" ToRole="stocklist" />
+        </EntityType>
+        <Association Name="FK__bollingerb__code__71D1E811">
+          <End Type="stocksearcherModel.stocklist" Role="stocklist" Multiplicity="1" />
+          <End Type="stocksearcherModel.bollingerbandMoveAvg" Role="bollingerbandMoveAvg" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="stocklist">
+              <PropertyRef Name="code" />
+            </Principal>
+            <Dependent Role="bollingerbandMoveAvg">
+              <PropertyRef Name="code" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK__fibonachiM__code__693CA210">
+          <End Type="stocksearcherModel.stocklist" Role="stocklist" Multiplicity="1" />
+          <End Type="stocksearcherModel.fibonachiMoveAvg" Role="fibonachiMoveAvg" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="stocklist">
+              <PropertyRef Name="code" />
+            </Principal>
+            <Dependent Role="fibonachiMoveAvg">
+              <PropertyRef Name="code" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="normalMoveAvg">
+          <Key>
+            <PropertyRef Name="code" />
+            <PropertyRef Name="date" />
+          </Key>
+          <Property Name="code" Type="String" Nullable="false" MaxLength="10" FixedLength="false" Unicode="true" />
+          <Property Name="date" Type="DateTime" Nullable="false" Precision="0" />
+          <Property Name="MvAvg5" Type="Int64" />
+          <Property Name="MvAvg20" Type="Int64" />
+          <Property Name="MvAvg60" Type="Int64" />
+          <Property Name="MvAvg120" Type="Int64" />
+          <Property Name="MvAvg240" Type="Int64" />
+          <Property Name="volume_price" Type="Int64" />
+          <Property Name="isuse" Type="Boolean" />
+          <NavigationProperty Name="stocklist" Relationship="stocksearcherModel.FK__normalMove__code__75A278F5" FromRole="normalMoveAvg" ToRole="stocklist" />
+        </EntityType>
+        <Association Name="FK__normalMove__code__75A278F5">
+          <End Type="stocksearcherModel.stocklist" Role="stocklist" Multiplicity="1" />
+          <End Type="stocksearcherModel.normalMoveAvg" Role="normalMoveAvg" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="stocklist">
+              <PropertyRef Name="code" />
+            </Principal>
+            <Dependent Role="normalMoveAvg">
+              <PropertyRef Name="code" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -413,6 +617,54 @@
                 <ScalarProperty Name="occured_date" ColumnName="occured_date" />
                 <ScalarProperty Name="code" ColumnName="code" />
                 <ScalarProperty Name="idx" ColumnName="idx" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="bollingerbandMoveAvg">
+            <EntityTypeMapping TypeName="stocksearcherModel.bollingerbandMoveAvg">
+              <MappingFragment StoreEntitySet="bollingerbandMoveAvg">
+                <ScalarProperty Name="isuse" ColumnName="isuse" />
+                <ScalarProperty Name="volume_price" ColumnName="volume_price" />
+                <ScalarProperty Name="StDv" ColumnName="StDv" />
+                <ScalarProperty Name="MvAvg60" ColumnName="MvAvg60" />
+                <ScalarProperty Name="lowerline" ColumnName="lowerline" />
+                <ScalarProperty Name="upperline" ColumnName="upperline" />
+                <ScalarProperty Name="date" ColumnName="date" />
+                <ScalarProperty Name="code" ColumnName="code" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="fibonachiMoveAvg">
+            <EntityTypeMapping TypeName="stocksearcherModel.fibonachiMoveAvg">
+              <MappingFragment StoreEntitySet="fibonachiMoveAvg">
+                <ScalarProperty Name="isuse" ColumnName="isuse" />
+                <ScalarProperty Name="volume_price" ColumnName="volume_price" />
+                <ScalarProperty Name="MvAvg233" ColumnName="MvAvg233" />
+                <ScalarProperty Name="MvAvg144" ColumnName="MvAvg144" />
+                <ScalarProperty Name="MvAvg89" ColumnName="MvAvg89" />
+                <ScalarProperty Name="MvAvg55" ColumnName="MvAvg55" />
+                <ScalarProperty Name="MvAvg34" ColumnName="MvAvg34" />
+                <ScalarProperty Name="MvAvg21" ColumnName="MvAvg21" />
+                <ScalarProperty Name="MvAvg13" ColumnName="MvAvg13" />
+                <ScalarProperty Name="MvAvg8" ColumnName="MvAvg8" />
+                <ScalarProperty Name="MvAvg5" ColumnName="MvAvg5" />
+                <ScalarProperty Name="date" ColumnName="date" />
+                <ScalarProperty Name="code" ColumnName="code" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="normalMoveAvg">
+            <EntityTypeMapping TypeName="stocksearcherModel.normalMoveAvg">
+              <MappingFragment StoreEntitySet="normalMoveAvg">
+                <ScalarProperty Name="isuse" ColumnName="isuse" />
+                <ScalarProperty Name="volume_price" ColumnName="volume_price" />
+                <ScalarProperty Name="MvAvg240" ColumnName="MvAvg240" />
+                <ScalarProperty Name="MvAvg120" ColumnName="MvAvg120" />
+                <ScalarProperty Name="MvAvg60" ColumnName="MvAvg60" />
+                <ScalarProperty Name="MvAvg20" ColumnName="MvAvg20" />
+                <ScalarProperty Name="MvAvg5" ColumnName="MvAvg5" />
+                <ScalarProperty Name="date" ColumnName="date" />
+                <ScalarProperty Name="code" ColumnName="code" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

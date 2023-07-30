@@ -15,6 +15,8 @@ using System.Windows.Forms;
 using NPOI.HSSF;
 using NPOI.HSSF.UserModel;
 using NPOI.SS.UserModel;
+using NPOI.SS.Formula.Functions;
+using System.Xml.Linq;
 
 namespace stocksearcher
 {
@@ -178,6 +180,8 @@ namespace stocksearcher
             String periodType = (this.comboBox1.SelectedItem as String).ToLower();
             ThreadPool.QueueUserWorkItem((_) =>
             {
+                // DEBUG
+                int index = 0;
                 using (var context = new stocksearcherEntities1())
                 {
                     var stockdatalist = context.stockdata.Where(x => x.isuse.HasValue).ToList();
@@ -186,7 +190,7 @@ namespace stocksearcher
                     {
                         try
                         {
-                            String url = $"http://localhost/?stock={stock.code}.T&periodType={periodType}&period=1&frequencyType=day&frequency=1";
+                            String url = $"http://localhost/?stock={stock.code}.T&periodType={periodType}&period=2&frequencyType=day&frequency=1";
                             String json = GetRequest(url);
                             var data = Newtonsoft.Json.JsonConvert.DeserializeObject<StockNode>(json);
                             if (data == null)
@@ -198,6 +202,7 @@ namespace stocksearcher
                             {
                                 stockdatas = TransStockData(stock.code, data);
                             }
+                            var maplist = stockdatalist.Where(x => String.Equals(x.code, stock.code, StringComparison.OrdinalIgnoreCase)).ToDictionary(k => k.timestamp, v => v);
 
                             var nodes = stockdatas.AsParallel().Select(node =>
                             {
@@ -205,7 +210,7 @@ namespace stocksearcher
                                 {
                                     return null;
                                 }
-                                if (stockdatalist.Where(x => String.Equals(x.code, node.code, StringComparison.OrdinalIgnoreCase) && x.timestamp == node.timestamp).Any())
+                                if (maplist.ContainsKey(node.timestamp))
                                 {
                                     return null;
                                 }
@@ -223,8 +228,16 @@ namespace stocksearcher
                             err.code = stock.code;
                             err.occured_date = DateTime.Now;
                             err.error_message = ex.Message;
-                            context.error.Add(err);
-                            context.SaveChanges();
+                            lock (context)
+                            {
+                                context.error.Add(err);
+                                context.SaveChanges();
+                            }
+                        }
+                        // DEBUG
+                        lock (this)
+                        {
+                            Console.WriteLine(++index);
                         }
                     });
                     EnableButton(true);
@@ -295,6 +308,10 @@ namespace stocksearcher
             {
                 this.button4.Enabled = enabled;
             });
+            this.button5.InvokeControl(() =>
+            {
+                this.button5.Enabled = enabled;
+            });
             this.comboBox1.InvokeControl(() =>
             {
                 this.comboBox1.Enabled = enabled;
@@ -326,6 +343,197 @@ namespace stocksearcher
                     return reader.ReadToEnd();
                 }
             }
+        }
+
+        private long GetMoveAvg(List<stockdata> list, long timestamp, long standard)
+        {
+            return list.Where(x => x.timestamp <= timestamp).OrderByDescending(x => x.timestamp).Take((int)standard).Select(x => x.closed_price.Value).Sum() / standard;
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+            EnableButton(false);
+            ThreadPool.QueueUserWorkItem((_) =>
+            {
+                // DEBUG
+                int index = 0;
+                using (var context = new stocksearcherEntities1())
+                {
+                    List<stocklist> stocklist;
+                    lock (context)
+                    {
+                        stocklist = context.stocklist.Where(x => x.isuse.HasValue).ToList();
+                    }
+                    stocklist.AsParallel().ForAll(stock =>
+                    //stocklist.ForEach(stock =>
+                    {
+                        try
+                        {
+                            List<stockdata> list;
+                            lock (context)
+                            {
+                                list = context.stockdata.Where(x => x.isuse == true && String.Equals(x.code, stock.code)).ToList();
+                            }
+                            if (list == null)
+                            {
+                                return;
+                            }
+                            Dictionary<DateTime, DateTime> normalMap;
+                            lock (context)
+                            {
+                                normalMap = context.normalMoveAvg.Where(x => String.Equals(x.code, stock.code) && x.isuse == true).Select(x => x.date).ToDictionary(k => k, v => v);
+                            }
+                            var contextlist = list.AsParallel().Select(node =>
+                            {
+                                if (node.date == null)
+                                {
+                                    return null;
+                                }
+                                if (normalMap.ContainsKey(node.date.Value))
+                                {
+                                    return null;
+                                }
+                                var normalmoveavg = new normalMoveAvg();
+                                normalmoveavg.code = node.code;
+                                normalmoveavg.date = node.date.Value;
+                                normalmoveavg.volume_price = node.volume_price.Value;
+                                normalmoveavg.isuse = true;
+                                //var debug = list.Where(x => x.timestamp <= node.timestamp).OrderByDescending(x => x.timestamp).ToList();
+                                var count = list.Where(x => x.timestamp <= node.timestamp).OrderByDescending(x => x.timestamp).Count();
+                                if (count < 5)
+                                {
+                                    return null;
+                                }
+                                if (count >= 5) normalmoveavg.MvAvg5 = GetMoveAvg(list, node.timestamp, 5L);
+                                if (count >= 20) normalmoveavg.MvAvg20 = GetMoveAvg(list, node.timestamp, 20L);
+                                if (count >= 60) normalmoveavg.MvAvg60 = GetMoveAvg(list, node.timestamp, 60L);
+                                if (count >= 120) normalmoveavg.MvAvg120 = GetMoveAvg(list, node.timestamp, 12L);
+                                if (count >= 240) normalmoveavg.MvAvg240 = GetMoveAvg(list, node.timestamp, 240L);
+                                return normalmoveavg;
+                            }).Where(x => x != null).ToList();
+                            lock (context)
+                            {
+                                context.normalMoveAvg.AddRange(contextlist);
+                                context.SaveChanges();
+                            }
+
+                        }
+                        catch (Exception ex)
+                        {
+                            var err = new error();
+                            err.code = stock.code;
+                            err.occured_date = DateTime.Now;
+                            err.error_message = ex.Message;
+                            lock (context)
+                            {
+                                context.error.Add(err);
+                                context.SaveChanges();
+                            }
+                        }
+                        // DEBUG
+                        lock (this)
+                        {
+                            Console.WriteLine(++index);
+                        }
+                    });
+                    EnableButton(true);
+                }
+            });
+        }
+
+        private void button5_Click(object sender, EventArgs e)
+        {
+            EnableButton(false);
+            ThreadPool.QueueUserWorkItem((_) =>
+            {
+                // DEBUG
+                int index = 0;
+                using (var context = new stocksearcherEntities1())
+                {
+                    List<stocklist> stocklist;
+                    lock (context)
+                    {
+                        stocklist = context.stocklist.Where(x => x.isuse.HasValue).ToList();
+                    }
+                    stocklist.AsParallel().ForAll(stock =>
+                    //stocklist.ForEach(stock =>
+                    {
+                        try
+                        {
+                            List<stockdata> list;
+                            lock (context)
+                            {
+                                list = context.stockdata.Where(x => x.isuse == true && String.Equals(x.code, stock.code)).ToList();
+                            }
+                            if (list == null)
+                            {
+                                return;
+                            }
+                            Dictionary<DateTime, DateTime> fibonachiMap;
+                            lock (context)
+                            {
+                                fibonachiMap = context.fibonachiMoveAvg.Where(x => String.Equals(x.code, stock.code) && x.isuse == true).Select(x => x.date).ToDictionary(k => k, v => v);
+                            }
+                            var contextlist = list.AsParallel().Select(node =>
+                            {
+                                if (node.date == null)
+                                {
+                                    return null;
+                                }
+                                if (fibonachiMap.ContainsKey(node.date.Value))
+                                {
+                                    return null;
+                                }
+                                var fibonachiMoveAvg = new fibonachiMoveAvg();
+                                fibonachiMoveAvg.code = node.code;
+                                fibonachiMoveAvg.date = node.date.Value;
+                                fibonachiMoveAvg.volume_price = node.volume_price.Value;
+                                fibonachiMoveAvg.isuse = true;
+                                //var debug = list.Where(x => x.timestamp <= node.timestamp).OrderByDescending(x => x.timestamp).ToList();
+                                var count = list.Where(x => x.timestamp <= node.timestamp).OrderByDescending(x => x.timestamp).Count();
+                                if (count < 5)
+                                {
+                                    return null;
+                                }
+                                if (count >= 5) fibonachiMoveAvg.MvAvg5 = GetMoveAvg(list, node.timestamp, 5L);
+                                if (count >= 8) fibonachiMoveAvg.MvAvg8 = GetMoveAvg(list, node.timestamp, 8L);
+                                if (count >= 13) fibonachiMoveAvg.MvAvg13 = GetMoveAvg(list, node.timestamp, 13L);
+                                if (count >= 21) fibonachiMoveAvg.MvAvg21 = GetMoveAvg(list, node.timestamp, 21L);
+                                if (count >= 34) fibonachiMoveAvg.MvAvg34 = GetMoveAvg(list, node.timestamp, 34L);
+                                if (count >= 55) fibonachiMoveAvg.MvAvg55 = GetMoveAvg(list, node.timestamp, 55L);
+                                if (count >= 89) fibonachiMoveAvg.MvAvg89 = GetMoveAvg(list, node.timestamp, 89L);
+                                if (count >= 144) fibonachiMoveAvg.MvAvg144 = GetMoveAvg(list, node.timestamp, 144L);
+                                if (count >= 233) fibonachiMoveAvg.MvAvg233 = GetMoveAvg(list, node.timestamp, 233L);
+                                return fibonachiMoveAvg;
+                            }).Where(x => x != null).ToList();
+                            lock (context)
+                            {
+                                context.fibonachiMoveAvg.AddRange(contextlist);
+                                context.SaveChanges();
+                            }
+
+                        }
+                        catch (Exception ex)
+                        {
+                            var err = new error();
+                            err.code = stock.code;
+                            err.occured_date = DateTime.Now;
+                            err.error_message = ex.Message;
+                            lock (context)
+                            {
+                                context.error.Add(err);
+                                context.SaveChanges();
+                            }
+                        }
+                        // DEBUG
+                        lock (this)
+                        {
+                            Console.WriteLine(++index);
+                        }
+                    });
+                    EnableButton(true);
+                }
+            });
         }
     }
 }
