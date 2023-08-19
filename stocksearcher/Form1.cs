@@ -178,49 +178,55 @@ namespace stocksearcher
             // http://localhost/?stock=4687.T&periodType=year&period=1&frequencyType=day&frequency=1
             EnableButton(false);
             String periodType = (this.comboBox1.SelectedItem as String).ToLower();
+            var condition = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
+            if ("WEEK".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddDays(-21);
+            }
+            else if ("MONTH".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddMonths(-3);
+            }
+            else if ("YEAR".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddYears(-3);
+            }
             ThreadPool.QueueUserWorkItem((_) =>
             {
                 // DEBUG
                 int index = 0;
-                using (var context = new stocksearcherEntities1())
+                stocksearcherEntities1 context = null;
+                try
                 {
-                    var stockdatalist = context.stockdata.Where(x => x.isuse.HasValue).ToList();
+                    context = new stocksearcherEntities1();
+                    context.Database.CommandTimeout = 60 * 5;
+                    context.stockdata.Where(x => x.date >= condition).DeleteFromQuery();
                     var stocklist = context.stocklist.Where(x => x.isuse.HasValue).ToList();
-                    stocklist.AsParallel().ForAll(stock =>
+                    Parallel.ForEach(stocklist, stock =>
                     {
                         try
                         {
-                            String url = $"http://localhost/?stock={stock.code}.T&periodType={periodType}&period=2&frequencyType=day&frequency=1";
+                            String url = $"http://localhost/?stock={stock.code}.T&periodType={periodType}&period=3&frequencyType=day&frequency=1";
                             String json = GetRequest(url);
                             var data = Newtonsoft.Json.JsonConvert.DeserializeObject<StockNode>(json);
                             if (data == null)
                             {
                                 return;
                             }
-                            List<stockdata> stockdatas;
-                            lock (stocklist)
-                            {
-                                stockdatas = TransStockData(stock.code, data);
-                            }
-                            var maplist = stockdatalist.Where(x => String.Equals(x.code, stock.code, StringComparison.OrdinalIgnoreCase)).ToDictionary(k => k.timestamp, v => v);
-
+                            var stockdatas = TransStockData(stock.code, data);
                             var nodes = stockdatas.AsParallel().Select(node =>
                             {
                                 if (node.date?.Hour != 9 || node.date?.Minute != 00 || node.date?.Second != 00)
                                 {
                                     return null;
                                 }
-                                if (maplist.ContainsKey(node.timestamp))
-                                {
-                                    return null;
-                                }
                                 return node;
                             }).Where(x => x != null).ToList();
-                            lock (context)
+                            lock (this)
                             {
-                                context.stockdata.AddRange(nodes);
-                                context.SaveChanges();
+                                context.BulkInsert(nodes);
                             }
+                            nodes.Clear();
                         }
                         catch (Exception ex)
                         {
@@ -228,7 +234,7 @@ namespace stocksearcher
                             err.code = stock.code;
                             err.occured_date = DateTime.Now;
                             err.error_message = ex.Message;
-                            lock (context)
+                            lock (this)
                             {
                                 context.error.Add(err);
                                 context.SaveChanges();
@@ -238,9 +244,22 @@ namespace stocksearcher
                         lock (this)
                         {
                             Console.WriteLine(++index);
+                            if (index % 1000 == 0)
+                            {
+                                context.Dispose();
+                                GC.Collect();
+                                GC.WaitForPendingFinalizers();
+                                context = new stocksearcherEntities1();
+                            }
                         }
                     });
                     EnableButton(true);
+                }
+                finally
+                {
+                    if (context != null) context.Dispose();
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
                 }
             });
         }
@@ -353,24 +372,37 @@ namespace stocksearcher
         private void button3_Click(object sender, EventArgs e)
         {
             EnableButton(false);
+            String periodType = (this.comboBox1.SelectedItem as String).ToLower();
+            var condition = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
+            if ("WEEK".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddDays(-21);
+            }
+            else if ("MONTH".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddMonths(-3);
+            }
+            else if ("YEAR".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddYears(-3);
+            }
             ThreadPool.QueueUserWorkItem((_) =>
             {
                 // DEBUG
                 int index = 0;
-                using (var context = new stocksearcherEntities1())
+                stocksearcherEntities1 context = null;
+                try
                 {
-                    List<stocklist> stocklist;
-                    lock (context)
-                    {
-                        stocklist = context.stocklist.Where(x => x.isuse.HasValue).ToList();
-                    }
-                    stocklist.AsParallel().ForAll(stock =>
-                    //stocklist.ForEach(stock =>
+                    context = new stocksearcherEntities1();
+                    context.Database.CommandTimeout = 60 * 5;
+                    context.normalMoveAvg.Where(x => x.date >= condition).DeleteFromQuery();
+                    var stocklist = context.stocklist.Where(x => x.isuse.HasValue).ToList();
+                    Parallel.ForEach(stocklist, stock =>
                     {
                         try
                         {
                             List<stockdata> list;
-                            lock (context)
+                            lock (this)
                             {
                                 list = context.stockdata.Where(x => x.isuse == true && String.Equals(x.code, stock.code)).ToList();
                             }
@@ -378,18 +410,9 @@ namespace stocksearcher
                             {
                                 return;
                             }
-                            Dictionary<DateTime, DateTime> normalMap;
-                            lock (context)
-                            {
-                                normalMap = context.normalMoveAvg.Where(x => String.Equals(x.code, stock.code) && x.isuse == true).Select(x => x.date).ToDictionary(k => k, v => v);
-                            }
-                            var contextlist = list.AsParallel().Select(node =>
+                            var contextlist = list.Where(x => x.date >= condition).AsParallel().Select(node =>
                             {
                                 if (node.date == null)
-                                {
-                                    return null;
-                                }
-                                if (normalMap.ContainsKey(node.date.Value))
                                 {
                                     return null;
                                 }
@@ -411,11 +434,12 @@ namespace stocksearcher
                                 if (count >= 240) normalmoveavg.MvAvg240 = GetMoveAvg(list, node.timestamp, 240L);
                                 return normalmoveavg;
                             }).Where(x => x != null).ToList();
-                            lock (context)
+                            lock (this)
                             {
-                                context.normalMoveAvg.AddRange(contextlist);
-                                context.SaveChanges();
+                                context.BulkInsert(contextlist);
                             }
+                            list.Clear();
+                            contextlist.Clear();
 
                         }
                         catch (Exception ex)
@@ -424,7 +448,7 @@ namespace stocksearcher
                             err.code = stock.code;
                             err.occured_date = DateTime.Now;
                             err.error_message = ex.Message;
-                            lock (context)
+                            lock (this)
                             {
                                 context.error.Add(err);
                                 context.SaveChanges();
@@ -434,9 +458,22 @@ namespace stocksearcher
                         lock (this)
                         {
                             Console.WriteLine(++index);
+                            if (index % 1000 == 0)
+                            {
+                                context.Dispose();
+                                GC.Collect();
+                                GC.WaitForPendingFinalizers();
+                                context = new stocksearcherEntities1();
+                            }
                         }
                     });
                     EnableButton(true);
+                }
+                finally
+                {
+                    if (context != null) context.Dispose();
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
                 }
             });
         }
@@ -444,24 +481,38 @@ namespace stocksearcher
         private void button5_Click(object sender, EventArgs e)
         {
             EnableButton(false);
+            String periodType = (this.comboBox1.SelectedItem as String).ToLower();
+            var condition = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
+            if ("WEEK".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddDays(-21);
+            }
+            else if ("MONTH".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddMonths(-3);
+            }
+            else if ("YEAR".Equals(periodType, StringComparison.OrdinalIgnoreCase))
+            {
+                condition = condition.AddYears(-3);
+            }
             ThreadPool.QueueUserWorkItem((_) =>
             {
                 // DEBUG
                 int index = 0;
-                using (var context = new stocksearcherEntities1())
+                stocksearcherEntities1 context = null;
+                try
                 {
-                    List<stocklist> stocklist;
-                    lock (context)
-                    {
-                        stocklist = context.stocklist.Where(x => x.isuse.HasValue).ToList();
-                    }
+                    context = new stocksearcherEntities1();
+                    context.Database.CommandTimeout = 60 * 5;
+                    context.fibonachiMoveAvg.Where(x => x.date >= condition).DeleteFromQuery();
+                    var stocklist = context.stocklist.Where(x => x.isuse.HasValue).ToList();
                     stocklist.AsParallel().ForAll(stock =>
                     //stocklist.ForEach(stock =>
                     {
                         try
                         {
                             List<stockdata> list;
-                            lock (context)
+                            lock (this)
                             {
                                 list = context.stockdata.Where(x => x.isuse == true && String.Equals(x.code, stock.code)).ToList();
                             }
@@ -469,18 +520,9 @@ namespace stocksearcher
                             {
                                 return;
                             }
-                            Dictionary<DateTime, DateTime> fibonachiMap;
-                            lock (context)
-                            {
-                                fibonachiMap = context.fibonachiMoveAvg.Where(x => String.Equals(x.code, stock.code) && x.isuse == true).Select(x => x.date).ToDictionary(k => k, v => v);
-                            }
                             var contextlist = list.AsParallel().Select(node =>
                             {
                                 if (node.date == null)
-                                {
-                                    return null;
-                                }
-                                if (fibonachiMap.ContainsKey(node.date.Value))
                                 {
                                     return null;
                                 }
@@ -506,12 +548,12 @@ namespace stocksearcher
                                 if (count >= 233) fibonachiMoveAvg.MvAvg233 = GetMoveAvg(list, node.timestamp, 233L);
                                 return fibonachiMoveAvg;
                             }).Where(x => x != null).ToList();
-                            lock (context)
+                            lock (this)
                             {
-                                context.fibonachiMoveAvg.AddRange(contextlist);
-                                context.SaveChanges();
+                                context.BulkInsert(contextlist);
                             }
-
+                            list.Clear();
+                            contextlist.Clear();
                         }
                         catch (Exception ex)
                         {
@@ -519,7 +561,7 @@ namespace stocksearcher
                             err.code = stock.code;
                             err.occured_date = DateTime.Now;
                             err.error_message = ex.Message;
-                            lock (context)
+                            lock (this)
                             {
                                 context.error.Add(err);
                                 context.SaveChanges();
@@ -529,9 +571,22 @@ namespace stocksearcher
                         lock (this)
                         {
                             Console.WriteLine(++index);
+                            if (index % 1000 == 0)
+                            {
+                                context.Dispose();
+                                GC.Collect();
+                                GC.WaitForPendingFinalizers();
+                                context = new stocksearcherEntities1();
+                            }
                         }
                     });
                     EnableButton(true);
+                }
+                finally
+                {
+                    if (context != null) context.Dispose();
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
                 }
             });
         }
