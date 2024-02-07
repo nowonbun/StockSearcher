@@ -1,68 +1,28 @@
 import FinanceDataReader as fdr
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+import datetime
 import csv
 import os
 import numpy as np
 import logging
 import mysql.connector
+import configparser
 
-"""
-CREATE TABLE STOCK_LIST_KR (
-    code varchar(10),
-    name varchar(200),
-    market varchar(200),
-    is_used bit,
-    order_no int,
-    create_date datetime,
-    update_date datetime,
-    
-    PRIMARY KEY (code)
-);
+config = configparser.ConfigParser()
+config.read('config.ini')
 
-CREATE TABLE STOCK_DATA_KR (
-    code varchar(10),
-    date date,
-    Open DECIMAL(16,2), 
-    High DECIMAL(16,2),
-    Low DECIMAL(16,2),
-    Close DECIMAL(16,2),
-    `Change` DECIMAL(16,2),
-    Volume DECIMAL(16,2),
-    5MvAvg DECIMAL(16,2),
-    20MvAvg DECIMAL(16,2),
-    60MvAvg DECIMAL(16,2),
-    112MvAvg DECIMAL(16,2),
-    224MvAvg DECIMAL(16,2),
-    UpperBand DECIMAL(16,2),
-    LowerBand DECIMAL(16,2),
-    20VolAvg DECIMAL(16,2),
-    60VolAvg DECIMAL(16,2),
-    TranAmnt DECIMAL(16,2),
-    is_used bit,
-    create_date datetime,
-    update_date datetime,
-    
-    PRIMARY KEY (code, date),
-    FOREIGN KEY (code) REFERENCES STOCK_LIST(code)
-);
-"""
-"""
-시작 전에 dataset 폴더와 그 안의 backup 폴더를 생성해야 한다.
-추후 기능 추가
-"""
-output_dir = "c:\\stock"
-start_date = "2020-01-01"
-end_date = "2099-12-31"
+output_dir = config['default']['output_dir']
+start_date = config['default']['start_date']
+end_date = config['default']['end_date']
 logger = None
 
 db_config = {
-    "host": "localhost",
-    "user": "nowonbun",
-    "password": "a12345",
+    "host": config['database']['host'],
+    "port": config['database']['port'],
+    "user": config['database']['user'],
+    "password": config['database']['password'],
     "database": "stock_data",
 }
-# end_date = "2024-01-07"
 
 
 def check_directory(dir_path):
@@ -115,8 +75,10 @@ def process_stock_data(stock):
 
     stock_data["60StdDev"] = stock_data["Close"].rolling(window=60).std()
 
-    stock_data["UpperBand"] = stock_data["60MvAvg"] + (stock_data["60StdDev"] * 2)
-    stock_data["LowerBand"] = stock_data["60MvAvg"] - (stock_data["60StdDev"] * 2)
+    stock_data["UpperBand"] = stock_data["60MvAvg"] + \
+        (stock_data["60StdDev"] * 2)
+    stock_data["LowerBand"] = stock_data["60MvAvg"] - \
+        (stock_data["60StdDev"] * 2)
 
     stock_data["20VolAvg"] = stock_data["Volume"].rolling(window=20).mean()
     stock_data["60VolAvg"] = stock_data["Volume"].rolling(window=60).mean()
