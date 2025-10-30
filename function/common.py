@@ -1,4 +1,4 @@
-# 디렉토리 생성
+# 디렉토리 존재 여부를 확인하고 없으면 생성한다.
 def check_directory(dir_path):
     import os
 
@@ -7,6 +7,7 @@ def check_directory(dir_path):
 
 
 def createQuery(table, columns, values):
+    """INSERT 쿼리를 문자열로 생성한다."""
     query = f"INSERT INTO {table} ("
     query += ", ".join(columns)
     query += ") VALUES ("
@@ -16,6 +17,7 @@ def createQuery(table, columns, values):
 
 
 def setup_custom_logger(dir, name):
+    """파일 핸들러가 붙은 로거를 초기화한다."""
     import logging
 
     formatter = logging.Formatter(
@@ -36,17 +38,20 @@ def setup_custom_logger(dir, name):
 
 
 def write_log(logger, msg):
+    """로거에 메시지를 기록하고 콘솔에도 출력한다."""
     logger.info(msg)
     print(msg)
 
 
 def write_data(filename, msg):
+    """지정한 텍스트 파일에 한 줄씩 메시지를 기록한다."""
     with open(filename, mode="a", newline="", encoding="utf-8") as file:
         file.write(msg)
         file.write("\n")
 
 
 def create_sequences(data_input, data_target, seq_length, predict_days):
+    """시계열 모델 학습을 위해 입력/타깃 시퀀스를 생성한다."""
     import numpy as np
 
     x = []
@@ -58,6 +63,7 @@ def create_sequences(data_input, data_target, seq_length, predict_days):
 
 
 def save_list_to_csv(file_path, data):
+    """2차원 리스트 데이터를 CSV 파일로 저장한다."""
     import os
 
     if os.path.exists(file_path):
@@ -71,6 +77,7 @@ def save_list_to_csv(file_path, data):
 
 
 def get_date_2year_ago():
+    """오늘 기준으로 2년 전 날짜(YYYY-MM-DD)를 반환한다."""
     from datetime import datetime, timedelta
 
     two_years_ago = datetime.today() - timedelta(days=365 * 2)
@@ -78,6 +85,7 @@ def get_date_2year_ago():
 
 
 def execute_query(db_config, query):
+    """데이터베이스에 연결해 단일 쿼리를 실행한다."""
     import mysql.connector
 
     conn = mysql.connector.connect(**db_config)
