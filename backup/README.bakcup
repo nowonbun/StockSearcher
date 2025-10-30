@@ -1,0 +1,251 @@
+# README.md
+
+## Environment Setup
+
+Make sure you have the following versions installed:
+
+- **Python Version:** 3.10.10
+- https://www.python.org/downloads/release/python-31010/
+
+## Package Installation
+
+```bash
+pip install pandas==2.1.4
+pip install numpy==1.26.3
+pip install requests==2.31.0
+pip install finance-datareader==0.9.66
+pip install beautifulsoup4==4.12.2
+pip install plotly==5.18.0
+pip install logging==0.4.9.6
+
+pip install mysqlclient=2.2.1
+pip install mysql-connector-python
+pip install selenium webdriver-manager
+
+pip install openpyxl
+pip install xlrd
+pip install pyyaml
+pip install yahoo-finance-api2
+```
+
+## Database Operations
+```sql
+-- Creating Database
+CREATE DATABASE stock_dataset;
+USE stock_dataset;
+
+-- Dropping Tables (if exist)
+DROP TABLE IF EXISTS STOCK_DATA;
+DROP TABLE IF EXISTS STOCK_LIST;
+DROP VIEW IF EXISTS stock_top_350;
+DROP VIEW IF EXISTS kospi_top_200;
+DROP VIEW IF EXISTS kosdaq_top_100;
+
+-- Creating Tables (한국)
+CREATE TABLE STOCK_LIST (
+    code varchar(10),
+    name varchar(200),
+    market varchar(200),
+    order_no int,
+    create_date datetime,
+    update_date datetime,
+    
+    PRIMARY KEY (code)
+);
+
+-- CREATE TABLE STOCK_DATA_KR (
+--     code varchar(10),
+--     date date,
+--     Open DECIMAL(16,2), 
+--     High DECIMAL(16,2),
+--     Low DECIMAL(16,2),
+--     Close DECIMAL(16,2),
+--     `Change` DECIMAL(16,2),
+--     Volume DECIMAL(16,2),
+--     TranAmnt DECIMAL(16,2),
+--     5MvAvg DECIMAL(16,2),
+--     20MvAvg DECIMAL(16,2),
+--     60MvAvg DECIMAL(16,2),
+--     120MvAvg DECIMAL(16,2),
+--     240MvAvg DECIMAL(16,2),
+--     UpperBand60 DECIMAL(16,2),
+--     LowerBand60 DECIMAL(16,2),
+
+--     8MvAvg DECIMAL(16,2),
+--     13MvAvg DECIMAL(16,2),
+--     21MvAvg DECIMAL(16,2),
+--     34MvAvg DECIMAL(16,2),
+--     55MvAvg DECIMAL(16,2),
+--     89MvAvg DECIMAL(16,2),
+    
+--     create_date datetime,
+--     update_date datetime,
+    
+--     PRIMARY KEY (code, date),
+--     FOREIGN KEY (code) REFERENCES STOCK_LIST_KR(code)
+-- );
+
+-- -- 코스피 200
+-- CREATE OR REPLACE VIEW kospi_top_200 as
+-- SELECT
+--     code,
+--     name,
+--     market,
+--     order_no
+-- FROM
+--     STOCK_LIST_KR slk
+-- WHERE
+--     market = 'KOSPI'
+-- ORDER BY
+--     order_no
+-- LIMIT
+--     200;
+
+-- -- 코스닥 150
+-- CREATE OR REPLACE VIEW kosdaq_top_150 as
+-- SELECT
+--     code,
+--     name,
+--     market,
+--     order_no
+-- FROM
+--     STOCK_LIST_KR slk
+-- WHERE
+--     market LIKE 'KOSDAQ%'
+-- ORDER BY
+--     order_no
+-- LIMIT
+--     150;
+
+-- -- 주식 상위 350종목
+-- CREATE OR REPLACE VIEW stock_top_350 as
+-- SELECT
+--     code,
+--     name,
+--     market,
+--     order_no
+-- FROM
+--     kospi_top_200
+-- UNION
+-- ALL
+-- SELECT
+--     code,
+--     name,
+--     market,
+--     order_no
+-- FROM
+--     kosdaq_top_150;
+
+
+-- CREATE TABLE IF NOT EXISTS STOCK_LIST_JP (
+--     code varchar(10),
+--     `name` varchar(200),
+--     stocktype varchar(200),
+--     industry33code varchar(200),
+--     industry33type varchar(200),
+--     industry17code varchar(200),
+--     industry17type varchar(200),
+--     scalecode varchar(200),
+--     scaletype varchar(200),
+--     create_date datetime,
+--     update_date datetime,
+
+--     PRIMARY KEY (code)
+-- );
+
+-- CREATE TABLE IF NOT EXISTS STOCK_DATA_JP (
+--     code varchar(10),
+--     `date` date,
+--     `Open` DECIMAL(16,2), 
+--     High DECIMAL(16,2),
+--     Low DECIMAL(16,2),
+--     `Close` DECIMAL(16,2),
+--     Volume DECIMAL(16,2),
+--     TransAmnt DECIMAL(16,2),
+--     5MvAvg DECIMAL(16,2),
+--     8MvAvg DECIMAL(16,2),
+--     13MvAvg DECIMAL(16,2),
+--     20MvAvg DECIMAL(16,2),
+--     21MvAvg DECIMAL(16,2),
+--     34MvAvg DECIMAL(16,2),
+--     55MvAvg DECIMAL(16,2),
+--     60MvAvg DECIMAL(16,2),
+--     89MvAvg DECIMAL(16,2),
+--     120MvAvg DECIMAL(16,2),
+--     240MvAvg DECIMAL(16,2),
+--     UpperBand60 DECIMAL(16,2),
+--     LowerBand60 DECIMAL(16,2),
+--     create_date datetime,
+--     update_date datetime,
+    
+--     PRIMARY KEY (code, `date`),
+--     FOREIGN KEY (code) REFERENCES STOCK_LIST_JP(code)
+-- );
+
+CREATE TABLE IF NOT EXISTS STOCK_LIST (
+    code varchar(10),
+    `name` varchar(200),
+    stocktype varchar(200),
+    industry33code varchar(200),
+    industry33type varchar(200),
+    industry17code varchar(200),
+    industry17type varchar(200),
+    scalecode varchar(200),
+    scaletype varchar(200),
+    create_date datetime,
+    update_date datetime,
+
+    PRIMARY KEY (code)
+);
+
+CREATE TABLE IF NOT EXISTS STOCK_DATA (
+    code varchar(10),
+    `date` date,
+    `Open` DECIMAL(16,2), 
+    High DECIMAL(16,2),
+    Low DECIMAL(16,2),
+    `Close` DECIMAL(16,2),
+    Volume DECIMAL(16,2),
+    TransAmnt DECIMAL(16,2),
+    5MvAvg DECIMAL(16,2),
+    20MvAvg DECIMAL(16,2),
+    50MvAvg DECIMAL(16,2),
+    60MvAvg DECIMAL(16,2),
+    120MvAvg DECIMAL(16,2),
+    240MvAvg DECIMAL(16,2),
+    upperband60_1 DECIMAL(16,2),
+    lowerband60_1 DECIMAL(16,2),
+    lowerband60_3 DECIMAL(16,2),
+    create_date datetime,
+    update_date datetime,
+    
+    PRIMARY KEY (code, `date`),
+    FOREIGN KEY (code) REFERENCES STOCK_LIST(code)
+);
+
+CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK (
+    
+    code varchar(10),
+    `date` date,
+    `Open` DECIMAL(16,2), 
+    High DECIMAL(16,2),
+    Low DECIMAL(16,2),
+    `Close` DECIMAL(16,2),
+    Volume DECIMAL(16,2),
+    TransAmnt DECIMAL(16,2),
+    5MvAvg DECIMAL(16,2),
+    20MvAvg DECIMAL(16,2),
+    50MvAvg DECIMAL(16,2),
+    60MvAvg DECIMAL(16,2),
+    120MvAvg DECIMAL(16,2),
+    240MvAvg DECIMAL(16,2),
+    upperband60_1 DECIMAL(16,2),
+    lowerband60_1 DECIMAL(16,2),
+    lowerband60_3 DECIMAL(16,2),
+    create_date datetime,
+    update_date datetime,
+    
+    PRIMARY KEY (code, `date`),
+    FOREIGN KEY (code) REFERENCES STOCK_LIST(code)
+);
+```

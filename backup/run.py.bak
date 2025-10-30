@@ -1,0 +1,19 @@
+if __name__ == "__main__":
+    import sys
+    import function.common as common
+    import function.static as static
+    import dataset_jp
+    import dataset_kr
+
+    common.check_directory(static.dir)
+    common.check_directory(f"{static.dir}\\log")
+
+    # sys.argv[0]?€ ?¤í¬ë¦½íŠ¸???´ë¦„???˜í??´ë?ë¡? ?¤ì œ ?¸ì??[1:]?ì„œë¶€???œì‘?©ë‹ˆ??
+    #args = sys.argv[1:]
+
+    # if args[0] == "kr":
+    #     dataset_kr.main()
+    # elif args[0] == "jp":
+    #     dataset_jp.main()
+    dataset_jp.main()
+
