@@ -18,7 +18,7 @@ class StockListNode:
         return getattr(self, key)
 
 
-def generateSqlQuery(nodes: list[StockListNode]) -> str:
+def generateSqlQuery(nodes: list[StockListNode], table_name: str = "STOCK_LIST_JP") -> str:
     column = [
         "code",
         "name",
@@ -30,7 +30,7 @@ def generateSqlQuery(nodes: list[StockListNode]) -> str:
         "scalecode",
         "scaletype",
     ]
-    query = "INSERT INTO STOCK_LIST ("
+    query = f"INSERT INTO {table_name} ("
     query += ", ".join([f"{v}" for v in column])
     query += ",create_date, update_date"
     query += ") VALUES "

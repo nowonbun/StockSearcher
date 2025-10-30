@@ -42,12 +42,12 @@ def _log(msg: str) -> None:
 # 종목 목록
 # ----------------------------
 def get_stock_list() -> List[Tuple[str, str, str]]:
-    """DB에서 종목 목록(code, name, market) 로드."""
+    """DB에서 한국 종목 목록(code, name, market) 로드."""
     conn = mysql.connector.connect(**static.db_config_kr)
     rows: List[Tuple[str, str, str]] = []
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT CODE, NAME, MARKET FROM STOCK_LIST ORDER BY order_no")
+            cur.execute("SELECT CODE, NAME, MARKET FROM STOCK_LIST_KR ORDER BY order_no")
             rows = [(r[0], r[1], r[2]) for r in cur.fetchall()]
     finally:
         conn.close()
@@ -55,7 +55,7 @@ def get_stock_list() -> List[Tuple[str, str, str]]:
 
 
 def save_stock_list() -> None:
-    """FinanceDataReader에서 KRX 상장 목록을 받아 STOCK_LIST upsert."""
+    """FinanceDataReader에서 KRX 상장 목록을 받아 STOCK_LIST_KR upsert."""
     df = fdr.StockListing("KRX")
     # 필요한 컬럼만 추출: Code, Name
     df = df[["Code", "Name"]].copy()
@@ -68,11 +68,11 @@ def save_stock_list() -> None:
     ]
 
     if not payload:
-        _log("STOCK_LIST 저장할 데이터 없음")
+        _log("STOCK_LIST_KR 저장할 데이터 없음")
         return
 
     query = (
-        "INSERT INTO STOCK_LIST (code, name, market, order_no, create_date, update_date) "
+        "INSERT INTO STOCK_LIST_KR (code, name, market, order_no, create_date, update_date) "
         "VALUES (%s, %s, %s, %s, now(), now()) "
         "ON DUPLICATE KEY UPDATE "
         "name = VALUES(name), market = VALUES(market), order_no = VALUES(order_no), update_date = now()"
@@ -83,10 +83,10 @@ def save_stock_list() -> None:
         with conn.cursor() as cur:
             cur.executemany(query, payload)
         conn.commit()
-        _log(f"STOCK_LIST 갱신 완료: {len(payload)}건")
+        _log(f"STOCK_LIST_KR 갱신 완료: {len(payload)}건")
     except Exception as e:
         conn.rollback()
-        _log(f"STOCK_LIST 저장 오류: {e}")
+        _log(f"STOCK_LIST_KR 저장 오류: {e}")
         raise
     finally:
         conn.close()
@@ -271,7 +271,7 @@ def process_symbol(code: str) -> None:
     # 일봉
     df_daily = fdr.DataReader(code, static.start_date, static.end_date)
     rows = build_rows_from_df(df_daily)
-    insert_rows("STOCK_DATA", code, rows)
+    insert_rows("STOCK_DATA_KR", code, rows)
 
     # 주봉 (금요일 기준 주간 집계)
     if df_daily is not None and not df_daily.empty:
@@ -279,7 +279,7 @@ def process_symbol(code: str) -> None:
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
         )
         w_rows = build_rows_from_df(weekly)
-        insert_rows("STOCK_DATA_WEEK", code, w_rows)
+        insert_rows("STOCK_DATA_WEEK_KR", code, w_rows)
 
 
 def main() -> None:

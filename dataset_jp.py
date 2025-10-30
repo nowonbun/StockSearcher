@@ -42,7 +42,7 @@ def get_stock_list_by_url(url: str, timeout: int = 30) -> pd.DataFrame:
 
 
 def save_stock_list(db_config: dict) -> List[stock_list_node.StockListNode]:
-    """종목 목록을 다운로드 후 DB(STOCK_LIST)에 upsert 저장하고 목록을 반환."""
+    """종목 목록을 다운로드 후 DB(STOCK_LIST_JP)에 upsert 저장하고 목록을 반환."""
     # https://www.jpx.co.jp/markets/statistics-equities/misc/01.html
     df = get_stock_list_by_url(
         "https://www.jpx.co.jp//markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
@@ -55,9 +55,9 @@ def save_stock_list(db_config: dict) -> List[stock_list_node.StockListNode]:
     ]
 
     # 기존 프로젝트 스타일을 존중: 문자열 쿼리 생성 후 단일 실행
-    query = stock_list_node.generateSqlQuery(stocks)
+    query = stock_list_node.generateSqlQuery(stocks, table_name="STOCK_LIST_JP")
     common.execute_query(db_config, query)
-    print("STOCK_LIST 저장 완료")
+    print("STOCK_LIST_JP 저장 완료")
     return stocks
 
 
@@ -315,7 +315,7 @@ def main() -> None:
                     static.period,
                     static.db_config_jp,
                     stock_lib.FREQUENCY_TYPE_DAY,
-                    "STOCK_DATA",
+                    "STOCK_DATA_JP",
                     True,  # lowerband60_3 포함
                 )
                 # 주봉
@@ -325,7 +325,7 @@ def main() -> None:
                     static.period,
                     static.db_config_jp,
                     stock_lib.FREQUENCY_TYPE_WEEK,
-                    "STOCK_DATA_WEEK",
+                    "STOCK_DATA_WEEK_JP",
                     False,  # weekly 테이블은 lowerband60_3 미포함(기존 동작 준수)
                 )
             except Exception as e:
