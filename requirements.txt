@@ -1,0 +1,13 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+mysql-connector-python
+pandas
+requests
+PyYAML
+selenium
+webdriver-manager
+finance-datareader @ git+https://github.com/FinanceData/FinanceDataReader.git
+yahoo_finance_api2
+torch==2.2.2+cu118
+numpy
+xlrd>=2.0.1
+openpyxl

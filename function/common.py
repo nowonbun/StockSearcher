@@ -19,6 +19,7 @@ def createQuery(table, columns, values):
 def setup_custom_logger(dir, name):
     """파일 핸들러가 붙은 로거를 초기화한다."""
     import logging
+    import os
 
     formatter = logging.Formatter(
         fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -26,7 +27,7 @@ def setup_custom_logger(dir, name):
     )
 
     handler = logging.FileHandler(
-        f"{dir}\\log\\logfile_{name}.log"
+        os.path.join(dir, "log", f"logfile_{name}.log")
     )  # 로그 파일 이름 및 경로 지정
     handler.setFormatter(formatter)
 

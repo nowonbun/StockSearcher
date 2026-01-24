@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_KR (
     UpperBand60_1 DECIMAL(20,4) DEFAULT NULL,
     LowerBand60_1 DECIMAL(20,4) DEFAULT NULL,
     LowerBand60_3 DECIMAL(20,4) DEFAULT NULL,
+    DI_plus       DECIMAL(10,4) DEFAULT NULL,
+    DI_minus      DECIMAL(10,4) DEFAULT NULL,
+    ADX           DECIMAL(10,4) DEFAULT NULL,
     create_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
@@ -61,6 +64,9 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_KR (
     UpperBand60_1 DECIMAL(20,4) DEFAULT NULL,
     LowerBand60_1 DECIMAL(20,4) DEFAULT NULL,
     LowerBand60_3 DECIMAL(20,4) DEFAULT NULL,
+    DI_plus       DECIMAL(10,4) DEFAULT NULL,
+    DI_minus      DECIMAL(10,4) DEFAULT NULL,
+    ADX           DECIMAL(10,4) DEFAULT NULL,
     create_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
@@ -107,6 +113,9 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_JP (
     UpperBand60_1 DECIMAL(20,4) DEFAULT NULL,
     LowerBand60_1 DECIMAL(20,4) DEFAULT NULL,
     LowerBand60_3 DECIMAL(20,4) DEFAULT NULL,
+    DI_plus       DECIMAL(10,4) DEFAULT NULL,
+    DI_minus      DECIMAL(10,4) DEFAULT NULL,
+    ADX           DECIMAL(10,4) DEFAULT NULL,
     create_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
@@ -134,6 +143,9 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_JP (
     UpperBand60_1 DECIMAL(20,4) DEFAULT NULL,
     LowerBand60_1 DECIMAL(20,4) DEFAULT NULL,
     LowerBand60_3 DECIMAL(20,4) DEFAULT NULL,
+    DI_plus       DECIMAL(10,4) DEFAULT NULL,
+    DI_minus      DECIMAL(10,4) DEFAULT NULL,
+    ADX           DECIMAL(10,4) DEFAULT NULL,
     create_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
@@ -142,3 +154,52 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_JP (
         ON UPDATE CASCADE
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS STOCK_PREDICT_JP (
+    as_of         DATE         NOT NULL,
+    code          VARCHAR(12)  NOT NULL,
+    probability   DECIMAL(10,6) NOT NULL,
+    run_name      VARCHAR(200) NOT NULL,
+    seq_len       INT          NOT NULL,
+    horizon_days  INT          NOT NULL,
+    rise_threshold DECIMAL(6,4) NOT NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (as_of, code),
+    KEY idx_stock_predict_jp_asof (as_of),
+    CONSTRAINT fk_stock_predict_jp_list FOREIGN KEY (code) REFERENCES STOCK_LIST_JP (code)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS STOCK_PREDICT_KR (
+    as_of         DATE         NOT NULL,
+    code          VARCHAR(12)  NOT NULL,
+    probability   DECIMAL(10,6) NOT NULL,
+    run_name      VARCHAR(200) NOT NULL,
+    seq_len       INT          NOT NULL,
+    horizon_days  INT          NOT NULL,
+    rise_threshold DECIMAL(6,4) NOT NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (as_of, code),
+    KEY idx_stock_predict_kr_asof (as_of),
+    CONSTRAINT fk_stock_predict_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS DATE_KEY (
+    idx         INT      NOT NULL,
+    date        DATE     NOT NULL,
+    type        VARCHAR(20) NOT NULL
+    PRIMARY KEY (date, idx)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO DATE_KEY
+SELECT
+  ROW_NUMBER() OVER (ORDER BY date ASC) AS no,
+  date,
+  'date'
+FROM (
+  SELECT DISTINCT date FROM stock_data
+) t
+ORDER BY date ASC;

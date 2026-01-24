@@ -1,9 +1,10 @@
 import configparser
+import os
 
 config = configparser.ConfigParser()
 config.read("config.ini")
 
-dir = config["default"]["output_dir"]
+dir = os.getenv("OUTPUT_DIR", config["default"]["output_dir"])
 
 db_config_jp = {
     "host": config["database"]["host"],

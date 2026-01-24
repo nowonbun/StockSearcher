@@ -20,12 +20,27 @@ from typing import Any, Iterable, List, Optional, Sequence, Tuple
 import mysql.connector
 import pandas as pd
 import requests
+import os
 
 import entity.stock_list_node as stock_list_node
 import entity.stock_models as stock_models
 import function.common as common
 import function.static as static
 import function.stock_lib as stock_lib
+
+
+# ----------------------------
+# logging
+# ----------------------------
+_LOGGER = None
+
+
+def _log(msg: str) -> None:
+    global _LOGGER
+    if _LOGGER is not None:
+        common.write_log(_LOGGER, msg)
+    else:
+        print(msg)
 
 
 # ----------------------------
@@ -57,7 +72,7 @@ def save_stock_list(db_config: dict) -> List[stock_list_node.StockListNode]:
     # 기존 프로젝트 스타일을 존중: 문자열 쿼리 생성 후 단일 실행
     query = stock_list_node.generateSqlQuery(stocks, table_name="STOCK_LIST_JP")
     common.execute_query(db_config, query)
-    print("STOCK_LIST_JP 저장 완료")
+    _log("STOCK_LIST_JP 저장 완료")
     return stocks
 
 
@@ -84,6 +99,65 @@ def _bollinger_bands(series: Sequence[float], idx: int, window: int, k: float) -
     return float(upper), float(mean), float(lower)
 
 
+def _calculate_dmi(
+    highs: Sequence[float],
+    lows: Sequence[float],
+    closes: Sequence[float],
+    period: int = 20,
+) -> Tuple[List[Optional[float]], List[Optional[float]], List[Optional[float]]]:
+    """Return DI+, DI-, ADX lists aligned to input length (SMA-based)."""
+    n = len(closes)
+    if n == 0:
+        return [], [], []
+
+    tr = [0.0] * n
+    plus_dm = [0.0] * n
+    minus_dm = [0.0] * n
+
+    for i in range(1, n):
+        up_move = highs[i] - highs[i - 1]
+        down_move = lows[i - 1] - lows[i]
+
+        if up_move > down_move and up_move > 0:
+            plus_dm[i] = up_move
+        if down_move > up_move and down_move > 0:
+            minus_dm[i] = down_move
+
+        tr[i] = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+
+    di_plus: List[Optional[float]] = [None] * n
+    di_minus: List[Optional[float]] = [None] * n
+    dx: List[Optional[float]] = [None] * n
+
+    for i in range(period, n):
+        start = i - period + 1
+        tr_sum = sum(tr[start : i + 1])
+        if tr_sum == 0:
+            continue
+        plus_sum = sum(plus_dm[start : i + 1])
+        minus_sum = sum(minus_dm[start : i + 1])
+        di_plus[i] = 100.0 * plus_sum / tr_sum
+        di_minus[i] = 100.0 * minus_sum / tr_sum
+        denom = (di_plus[i] or 0.0) + (di_minus[i] or 0.0)
+        if denom != 0:
+            dx[i] = 100.0 * abs((di_plus[i] or 0.0) - (di_minus[i] or 0.0)) / denom
+
+    adx: List[Optional[float]] = [None] * n
+    first_adx_idx = (period * 2) - 1
+    for i in range(first_adx_idx, n):
+        start = i - period + 1
+        window = dx[start : i + 1]
+        if any(v is None for v in window):
+            continue
+        adx[i] = sum(v for v in window if v is not None) / period
+
+    return di_plus, di_minus, adx
+
+
 def _filter_valid(series: stock_models.StockSeries) -> stock_models.StockSeries:
     """None 값이 포함된 캔들을 제거."""
     return stock_models.StockSeries(
@@ -97,7 +171,7 @@ def build_calculated_rows(raw: dict[str, List[Any]]) -> List[List[Any]]:
     반환 스키마(헤더 없음):
     [Date, Open, High, Low, Close, Volume, TranAmnt,
      5MvAvg, 20MvAvg, 50MvAvg, 60MvAvg, 120MvAvg, 240MvAvg,
-     UpperBand60_1, LowerBand60_1, LowerBand60_3]
+     UpperBand60_1, LowerBand60_1, LowerBand60_3, DI_plus, DI_minus, ADX]
     """
     series = stock_models.StockSeries.from_raw(raw)
     series = _filter_valid(series)
@@ -110,6 +184,8 @@ def build_calculated_rows(raw: dict[str, List[Any]]) -> List[List[Any]]:
     lo = [float(c.low) for c in series.candles]
     cl = [float(c.close) for c in series.candles]
     vo = [float(c.volume) for c in series.candles]
+
+    di_plus, di_minus, adx = _calculate_dmi(hi, lo, cl, period=20)
 
     rows: List[List[Any]] = []
     for i in range(len(ts)):
@@ -148,6 +224,9 @@ def build_calculated_rows(raw: dict[str, List[Any]]) -> List[List[Any]]:
                 up60_1,
                 lo60_1,
                 lo60_3,
+                di_plus[i],
+                di_minus[i],
+                adx[i],
             ]
         )
     return rows
@@ -171,14 +250,14 @@ def fetch_stock_raw(
             lib = stock_lib.StockLib(symbol)
             data = lib.get_historical(driver, period_type, period, frequency_type, frequency)
             if data is None:
-                print(f"{symbol} 데이터 없음")
+                _log(f"{symbol} 데이터 없음")
                 return None
             return data
         except requests.Timeout:
-            print(f"{symbol} timeout")
+            _log(f"{symbol} timeout")
         except requests.RequestException as e:
-            print("error -", e)
-        print(f"retry{i} - {symbol}")
+            _log(f"error - {e}")
+        _log(f"retry{i} - {symbol}")
     return None
 
 
@@ -194,7 +273,7 @@ def _build_insert_query(
     입력 데이터 튜플 포맷:
         (code, date, open, high, low, close, volume, transamnt,
          5mvavg, 20mvavg, 50mvavg, 60mvavg, 120mvavg, 240mvavg,
-         upperband60_1, lowerband60_1[, lowerband60_3])
+         upperband60_1, lowerband60_1[, lowerband60_3], di_plus, di_minus, adx)
     """
     cols = [
         "code",
@@ -216,6 +295,7 @@ def _build_insert_query(
     ]
     if include_lowerband60_3:
         cols.append("lowerband60_3")
+    cols.extend(["di_plus", "di_minus", "adx"])
 
     placeholders = ",".join(["%s"] * len(cols))
     insert_cols = ", ".join(cols) + ", create_date, update_date"
@@ -238,16 +318,17 @@ def insert_rows(
     include_lowerband60_3: bool,
 ) -> None:
     if not rows:
-        print(f"{code} 저장할 데이터 없음")
+        _log(f"{code} 저장할 데이터 없음")
         return
 
     query, value_count = _build_insert_query(table, include_lowerband60_3)
 
     payload: List[Tuple[Any, ...]] = []
     for r in rows:
-        base = [code] + r[:15]  # date..lowerband60_1까지 15개
+        base = [code] + r[:15]  # date..lowerband60_1
         if include_lowerband60_3:
             base.append(r[15])
+        base.extend(r[16:19])
         payload.append(tuple(base))
 
     conn = mysql.connector.connect(**db_config)
@@ -255,10 +336,10 @@ def insert_rows(
         with conn.cursor() as cur:
             cur.executemany(query, payload)
         conn.commit()
-        print(f"{code} {table} {len(payload)}건 저장")
+        _log(f"{code} {table} {len(payload)}건 저장")
     except Exception as e:
         conn.rollback()
-        print(e)
+        _log(str(e))
         raise
     finally:
         conn.close()
@@ -285,22 +366,36 @@ def process_symbol(
         1,
     )
     if raw is None:
-        print(f"{code} 데이터 수집 실패")
+        _log(f"{code} 데이터 수집 실패")
         return
     rows = build_calculated_rows(raw)
     insert_rows(table, code, rows, db_config, include_lowerband60_3)
 
 
 def main() -> None:
+    global _LOGGER
+    common.check_directory(static.dir)
+    common.check_directory(os.path.join(static.dir, "log"))
+    _LOGGER = common.setup_custom_logger(static.dir, "create_stock_dataset_jp")
     # 종목 목록 저장 및 시세 저장 엔트리포인트
     from selenium import webdriver
     from webdriver_manager.chrome import ChromeDriverManager
     from selenium.webdriver.chrome.service import Service
 
     options = webdriver.ChromeOptions()
-    # options.add_argument("--headless=new")  # 필요 시 헤드리스
+    if os.getenv("CHROME_HEADLESS", "1") == "1":
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+    chrome_bin = os.getenv("CHROME_BIN")
+    if chrome_bin:
+        options.binary_location = chrome_bin
 
-    service = Service(ChromeDriverManager().install())
+    chromedriver_path = os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
+    if os.path.exists(chromedriver_path):
+        service = Service(chromedriver_path)
+    else:
+        service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     try:
         stocks = save_stock_list(static.db_config_jp)
@@ -329,7 +424,7 @@ def main() -> None:
                     False,  # weekly 테이블은 lowerband60_3 미포함(기존 동작 준수)
                 )
             except Exception as e:
-                print(e)
+                _log(str(e))
     finally:
         try:
             driver.quit()

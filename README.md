@@ -1,4 +1,4 @@
-# StockSearcher
+﻿# StockSearcher
 
 주식 데이터 수집 자동화를 위한 파이썬 스크립트 모음입니다. 일본과 한국 시장의 일/주봉 데이터를 수집하고, 이동평균 및 볼린저 밴드와 같은 지표를 계산한 뒤 MySQL 데이터베이스에 적재합니다.
 
@@ -7,7 +7,7 @@
 - **일본 시장 수집 (`dataset_jp.py`)**: Selenium 기반으로 JPX에서 제공하는 종목 목록과 개별 시세 데이터를 다운로드합니다.
 - **한국 시장 수집 (`dataset_kr.py`)**: FinanceDataReader를 사용해 KRX 상장 종목의 일/주봉 데이터를 가져옵니다.
 - **공통 실행 스크립트 (`run.py`)**: `python run.py [jp|kr]` 명령으로 두 파이프라인을 선택적으로 실행할 수 있습니다.
-- **로그/출력 관리**: `config.ini`에 정의된 `output_dir` 하위에 로그 파일과 산출물이 저장됩니다.
+- **모델 학습/추론**: JP/KR 각각의 모델 학습과 확률 상위 종목 리스트 추론을 지원합니다.
 
 ## 디렉터리 구조
 
@@ -17,6 +17,10 @@ StockSearcher/
 ├── run.py               # 엔트리포인트 스크립트
 ├── dataset_jp.py        # 일본 주식 데이터 수집 파이프라인
 ├── dataset_kr.py        # 한국 주식 데이터 수집 파이프라인
+├── model_jp.py          # 일본 모델 학습 스크립트
+├── model_kr.py          # 한국 모델 학습 스크립트
+├── predict_jp.py        # 일본 상위 확률 추론 스크립트
+├── predict_kr.py        # 한국 상위 확률 추론 스크립트
 ├── function/            # 공통 유틸리티 모듈
 ├── entity/              # 데이터 모델 정의
 ├── backup/              # 이전 버전 및 참고용 스크립트
@@ -32,19 +36,18 @@ StockSearcher/
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows는 .venv\Scripts\activate
+source .venv\Scripts\activate  # Windows는 .venv\Scripts\activate
 pip install --upgrade pip
-pip install mysql-connector-python pandas requests selenium webdriver-manager FinanceDataReader
+pip install mysql-connector-python pandas requests selenium webdriver-manager FinanceDataReader torch
 ```
 
 ### 2. MySQL 데이터베이스
 
 - MySQL 서버가 준비되어 있어야 합니다.
 - 다음 테이블을 사용합니다(`dataset_jp.py`/`dataset_kr.py` 참고).
-  - `STOCK_LIST`
-  - `STOCK_DATA`
-  - `STOCK_DATA_WEEK`
-- 샘플 DDL은 직접 작성하거나 `entity` 모듈의 SQL 생성 코드를 참고하세요.
+  - `STOCK_LIST_JP`, `STOCK_DATA_JP`, `STOCK_DATA_WEEK_JP`
+  - `STOCK_LIST_KR`, `STOCK_DATA_KR`, `STOCK_DATA_WEEK_KR`
+- 샘플 DDL은 직접 작성하거나 `ddl.sql`을 참고하세요.
 
 ### 3. Chrome 및 WebDriver
 
@@ -66,7 +69,7 @@ database_jp = stock_dataset_jp
 database_kr = stock_dataset_kr
 
 [default]
-output_dir = D:\\stock\\stock_searcher
+output_dir = D:\stock\stock_searcher
 start_date = 2020-01-01
 end_date = 2099-12-31
 period = 5
@@ -79,32 +82,194 @@ period = 5
 ## 실행 방법
 
 ```bash
-# 일본 주식 데이터 수집 및 저장
+# 일본 주식 데이터 수집 및 적재
 python run.py jp
 
-# 한국 주식 데이터 수집 및 저장
+# 한국 주식 데이터 수집 및 적재
 python run.py kr
 ```
 
-- 인자를 생략하면 기본값(`jp`)이 실행됩니다.
-- 한국 수집 파이프라인은 내부적으로 쓰레드 풀(기본 5개)을 사용하여 종목을 병렬 처리합니다.
+- 인자를 생략하면 기본값(`jp`)으로 실행됩니다.
+- 한국 수집 파이프라인은 기본 5개 스레드로 종목을 병렬 처리합니다.
+
+## Docker + cron 실행
+
+JP는 새벽 2시, KR은 새벽 4시에 컨테이너 내부 cron으로 실행하도록 구성했습니다. `model_*.pt`는 Windows 공유 폴더를 마운트해서 사용합니다.
+JP 데이터 수집은 Docker에서 기본 헤드리스 크롬으로 동작합니다 (`CHROME_HEADLESS=1`).
+컨테이너에는 `chromium`/`chromium-driver`가 포함되며, 필요하면 `CHROMEDRIVER_PATH`로 경로를 지정할 수 있습니다.
+
+## GPU 사용 (PyTorch CUDA)
+
+Docker에서 GPU를 쓰려면 Docker Desktop에서 WSL2 기반 엔진을 켜고, NVIDIA Container Toolkit이 활성화되어 있어야 합니다.
+`docker-compose.yml`은 `runtime: nvidia` 설정을 사용합니다 (compose v1 호환).
+
+GPU 확인:
+
+```bash
+docker compose run --rm stocksearcher nvidia-smi
+```
+
+### 1. config.ini 출력 경로 조정
+
+컨테이너는 `OUTPUT_DIR=/data` 환경변수를 사용하므로, `config.ini`의 `output_dir`는 로컬 경로로 유지해도 됩니다.
+데이터셋 로그는 `/data/log/logfile_*.log`로 저장됩니다.
+
+```ini
+[default]
+output_dir = /data
+```
+
+### 2. docker-compose.yml 수정
+
+- `d:/stock/shared_models` 경로를 실제 Windows 공유 폴더로 변경하세요.
+- `JOB_CMD_JP`/`JOB_CMD_KR`는 실행할 스크립트로 바꿀 수 있습니다.
+
+```yaml
+services:
+  stocksearcher:
+    environment:
+      CRON_SCHEDULE_JP: "0 2 * * *"
+      CRON_SCHEDULE_KR: "0 4 * * *"
+      JOB_CMD_JP: "python dataset_jp.py && python predict_jp.py --model /models/model_jp.pt --seq-len 60 --top-k 20 --save-db"
+      JOB_CMD_KR: "python dataset_kr.py && python predict_kr.py --model /models/model_kr.pt --seq-len 60 --top-k 20 --save-db"
+      CRON_LOG_PATH: "/data/log/cron.log"
+    volumes:
+      - ./config.ini:/app/config.ini:ro
+      - d:/stock/shared_models:/models:ro
+      - d:/stock/stock_searcher:/data
+```
+
+### 3. 빌드/실행
+
+```bash
+docker compose up -d --build
+```
+
+빌드가 느리면 BuildKit 캐시를 켜세요(필수는 아님).
+
+```bash
+setx DOCKER_BUILDKIT 1
+```
+
+로그 확인:
+
+```bash
+docker compose logs -f
+```
+
+윈도우에서 cron 로그 확인:
+
+`d:/stock/stock_searcher/log/cron.log`
+
+> cron으로 실행되는 dataset/model/predict의 표준 출력은 모두 위 cron 로그에 기록됩니다.
+
+### 4. 수동 실행 (원할 때 1회 실행)
+
+컨테이너 기본 스케줄은 그대로 두고, 필요할 때만 수동으로 1회 실행할 수 있습니다.
+
+#### 데이터 수집만 수동 실행:
+
+```bash
+docker compose run --rm stocksearcher python dataset_jp.py
+```
+
+```bash
+docker compose run --rm stocksearcher python dataset_kr.py
+```
+
+#### 추론 수동 실행:
+
+```bash
+docker compose run --rm stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --top-k 20 --save-db
+```
+
+```bash
+docker compose run --rm stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --top-k 20 --save-db
+```
+
+> 참고: `JOB_CMD_JP`/`JOB_CMD_KR`에 작은따옴표(')는 넣지 마세요. cron 파일 생성 시 충돌할 수 있습니다.
+
+## 모델 학습 (JP)
+
+JP 모델은 향후 N 거래일 내 지정한 상승률 이상을 달성할 확률을 예측합니다.
+기본 타깃: "5일 내 +10% 이상 상승".
+
+```bash
+python model_jp.py --seq-len 60 --horizon-days 5 --rise-threshold 0.10 --epochs 30 --log-codes
+```
+
+모델 출력 파일: 현재 작업 폴더에 `model_jp.pt`로 저장됩니다.
+
+유용한 옵션:
+
+```bash
+python model_jp.py --model-out d:\stock\StockSearcher\models\model_jp.pt
+python model_jp.py --pos-weight 3.0
+```
+
+## 모델 학습 (KR)
+
+KR 모델은 JP와 동일한 방식으로 학습합니다.
+
+```bash
+python model_kr.py --seq-len 60 --horizon-days 5 --rise-threshold 0.10 --epochs 30 --log-codes
+```
+
+모델 출력 파일: 현재 작업 폴더에 `model_kr.pt`로 저장됩니다.
+
+## 추론 (JP)
+
+특정 날짜 기준으로 상위 확률 종목을 출력합니다. `--as-of`가 2025-01-20이면 2025-01-19까지의 데이터로 추론합니다.
+
+```bash
+python predict_jp.py --model model_jp.pt --seq-len 60 --as-of 2025-01-20 --top-k 20
+```
+
+특정 종목만 확인하려면 `--code`를 사용하세요.
+
+```bash
+python predict_jp.py --model model_jp.pt --seq-len 60 --as-of 2025-01-20 --code 7203
+```
+
+DB에 저장하려면 `--save-db`를 추가합니다.
+
+```bash
+python predict_jp.py --model model_jp.pt --seq-len 60 --as-of 2025-01-20 --top-k 20 --save-db
+```
+
+## 추론 (KR)
+
+```bash
+python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --top-k 20
+```
+
+특정 종목만 확인하려면 `--code`를 사용하세요.
+
+```bash
+python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --code 005930
+```
+
+DB에 저장하려면 `--save-db`를 추가합니다.
+
+```bash
+python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --top-k 20 --save-db
+```
 
 ## 출력 및 로그
 
-- `output_dir` 하위에 `log/logfile_*.log` 형태의 로그가 생성됩니다.
-- 데이터베이스 적재 결과는 표준 출력과 로그 파일 양쪽에 기록됩니다.
-- 오류 발생 시 로그를 확인하고, 실패한 종목만 재실행하면 됩니다.
+- `output_dir` 하위에 `log/logfile_*.log` 형태로 로그가 생성됩니다.
+- 데이터베이스 적재 결과와 에러 메시지가 로그에 기록됩니다.
 
 ## 자주 묻는 질문
 
 ### Q1. SSL 또는 인증 오류가 발생합니다.
-- 회사 프록시/방화벽 환경에서는 Selenium 혹은 HTTP 요청이 차단될 수 있습니다. 네트워크 정책을 확인하거나 오프라인 데이터 파일을 제공하세요.
+- 사내 보안 환경에서 Selenium HTTP 요청이 차단될 수 있습니다. 네트워크 정책을 확인하거나 프록시/방화벽 예외를 설정하세요.
 
 ### Q2. `FinanceDataReader` 요청 제한이 걸립니다.
-- 기본적으로 공개 API를 사용하므로 대량 호출 시 잠시 대기 후 재시도하십시오. 필요하면 `process_symbol` 내에 슬립이나 재시도 로직을 추가할 수 있습니다.
+- 공개 API는 요청 제한이 있을 수 있습니다. 필요하면 `process_symbol` 내에 지연/재시도 로직을 추가하세요.
 
 ### Q3. 데이터베이스 연결 오류가 납니다.
-- `config.ini`에서 호스트/포트/사용자 정보를 다시 확인하고, MySQL에 해당 데이터베이스와 테이블이 존재하는지 확인하세요.
+- `config.ini`의 호스트/포트/계정 정보를 확인하고, 해당 DB와 테이블이 존재하는지 점검하세요.
 
 ## 라이선스
 

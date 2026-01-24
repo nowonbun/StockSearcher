@@ -14,6 +14,9 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+import json
+import time
+import os
 from typing import Any, Iterable, List, Sequence, Tuple
 
 import FinanceDataReader as fdr
@@ -56,10 +59,11 @@ def get_stock_list() -> List[Tuple[str, str, str]]:
 
 def save_stock_list() -> None:
     """FinanceDataReader에서 KRX 상장 목록을 받아 STOCK_LIST_KR upsert."""
-    df = fdr.StockListing("KRX")
+    df = _fetch_stock_listing()
     # 필요한 컬럼만 추출: Code, Name
     df = df[["Code", "Name"]].copy()
-    df["Market"] = "KRX"
+    if "Market" not in df.columns:
+        df["Market"] = "KRX"
     df["order_no"] = range(len(df))
 
     payload = [
@@ -92,6 +96,37 @@ def save_stock_list() -> None:
         conn.close()
 
 
+def _fetch_stock_listing() -> pd.DataFrame:
+    last_err: Exception | None = None
+    for i in range(3):
+        try:
+            return fdr.StockListing("KRX")
+        except json.JSONDecodeError as e:
+            last_err = e
+        except Exception as e:
+            last_err = e
+        if i < 2:
+            time.sleep(1)
+
+    _log("KRX listing failed, trying KOSPI/KOSDAQ/KONEX fallback.")
+    try:
+        frames: List[pd.DataFrame] = []
+        for market in ("KOSPI", "KOSDAQ", "KONEX"):
+            df_m = fdr.StockListing(market)
+            df_m = df_m.copy()
+            if "Market" not in df_m.columns:
+                df_m["Market"] = market
+            frames.append(df_m)
+        if frames:
+            return pd.concat(frames, ignore_index=True)
+    except Exception as e:
+        last_err = e
+
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("KRX listing failed with no error information.")
+
+
 # ----------------------------
 # 지표 계산
 # ----------------------------
@@ -104,13 +139,75 @@ REQ_COLS = [
 ]
 
 
+def _calculate_dmi_wilder(
+    highs: pd.Series,
+    lows: pd.Series,
+    closes: pd.Series,
+    period: int = 20,
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Return DI+, DI-, ADX using Wilder smoothing."""
+    up_move = highs.diff()
+    down_move = lows.shift(1) - lows
+
+    plus_dm = pd.Series(0.0, index=highs.index)
+    minus_dm = pd.Series(0.0, index=highs.index)
+    plus_dm[(up_move > down_move) & (up_move > 0)] = up_move
+    minus_dm[(down_move > up_move) & (down_move > 0)] = down_move
+
+    tr = pd.concat(
+        [
+            highs - lows,
+            (highs - closes.shift(1)).abs(),
+            (lows - closes.shift(1)).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    n = len(tr)
+    if n == 0:
+        return (pd.Series(dtype="float64"), pd.Series(dtype="float64"), pd.Series(dtype="float64"))
+
+    sm_tr = pd.Series([None] * n, index=tr.index, dtype="float64")
+    sm_plus = pd.Series([None] * n, index=tr.index, dtype="float64")
+    sm_minus = pd.Series([None] * n, index=tr.index, dtype="float64")
+
+    if n > period:
+        start = 1
+        end = period + 1
+        sm_tr.iloc[period] = tr.iloc[start:end].sum()
+        sm_plus.iloc[period] = plus_dm.iloc[start:end].sum()
+        sm_minus.iloc[period] = minus_dm.iloc[start:end].sum()
+
+        for i in range(period + 1, n):
+            sm_tr.iloc[i] = sm_tr.iloc[i - 1] - (sm_tr.iloc[i - 1] / period) + tr.iloc[i]
+            sm_plus.iloc[i] = sm_plus.iloc[i - 1] - (sm_plus.iloc[i - 1] / period) + plus_dm.iloc[i]
+            sm_minus.iloc[i] = sm_minus.iloc[i - 1] - (sm_minus.iloc[i - 1] / period) + minus_dm.iloc[i]
+
+    di_plus = 100.0 * sm_plus / sm_tr
+    di_minus = 100.0 * sm_minus / sm_tr
+    dx = 100.0 * (di_plus - di_minus).abs() / (di_plus + di_minus)
+
+    adx = pd.Series([None] * n, index=tr.index, dtype="float64")
+    first_adx_idx = (period * 2) - 1
+    if n > first_adx_idx:
+        first_range = dx.iloc[period : first_adx_idx + 1]
+        if first_range.notna().all():
+            adx.iloc[first_adx_idx] = first_range.mean()
+            for i in range(first_adx_idx + 1, n):
+                if pd.isna(adx.iloc[i - 1]) or pd.isna(dx.iloc[i]):
+                    continue
+                adx.iloc[i] = ((adx.iloc[i - 1] * (period - 1)) + dx.iloc[i]) / period
+
+    return di_plus, di_minus, adx
+
+
 def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
     """원본 DataFrame에서 지표 컬럼 생성 후, DB 적재용 행 리스트 변환.
 
     반환 스키마:
     [date, Open, High, Low, Close, Volume, TransAmnt,
      5MvAvg, 20MvAvg, 50MvAvg, 60MvAvg, 120MvAvg, 240MvAvg,
-     UpperBand60_1, LowerBand60_1, LowerBand60_3]
+     UpperBand60_1, LowerBand60_1, LowerBand60_3, DI_plus, DI_minus, ADX]
     """
     if df is None or df.empty:
         return []
@@ -139,6 +236,13 @@ def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
 
     work["TransAmnt"] = work["Close"] * work["Volume"]
 
+    di_plus, di_minus, adx = _calculate_dmi_wilder(
+        work["High"], work["Low"], work["Close"], period=20
+    )
+    work["DI_plus"] = di_plus
+    work["DI_minus"] = di_minus
+    work["ADX"] = adx
+
     # 필요한 모든 컬럼이 채워진 구간만 사용
     needed = [
         "Open",
@@ -156,6 +260,9 @@ def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
         "UpperBand60_1",
         "LowerBand60_1",
         "LowerBand60_3",
+        "DI_plus",
+        "DI_minus",
+        "ADX",
     ]
     work = work.dropna(subset=needed)
     if work.empty:
@@ -190,6 +297,9 @@ def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
                 float(row["UpperBand60_1"]),
                 float(row["LowerBand60_1"]),
                 float(row["LowerBand60_3"]),
+                float(row["DI_plus"]),
+                float(row["DI_minus"]),
+                float(row["ADX"]),
             ]
         )
     return rows
@@ -204,7 +314,7 @@ def _build_insert_query(table: str) -> Tuple[str, int]:
     값 포맷:
         (code, date, Open, High, Low, Close, Volume, TransAmnt,
          5MvAvg, 20MvAvg, 50MvAvg, 60MvAvg, 120MvAvg, 240MvAvg,
-         UpperBand60_1, LowerBand60_1, LowerBand60_3)
+         UpperBand60_1, LowerBand60_1, LowerBand60_3, DI_plus, DI_minus, ADX)
     """
     cols = [
         "code",
@@ -224,6 +334,9 @@ def _build_insert_query(table: str) -> Tuple[str, int]:
         "UpperBand60_1",
         "LowerBand60_1",
         "LowerBand60_3",
+        "DI_plus",
+        "DI_minus",
+        "ADX",
     ]
 
     placeholders = ",".join(["%s"] * len(cols))
@@ -284,6 +397,8 @@ def process_symbol(code: str) -> None:
 
 def main() -> None:
     global _LOGGER
+    common.check_directory(static.dir)
+    common.check_directory(os.path.join(static.dir, "log"))
     _LOGGER = common.setup_custom_logger(static.dir, "create_stock_dataset_kr2")
 
     # 목록 저장 → 목록 로드 → 병렬 수집
