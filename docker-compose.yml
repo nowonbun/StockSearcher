@@ -11,7 +11,6 @@ services:
       CRON_LOG_PATH: "/data/log/cron.log"
       NVIDIA_VISIBLE_DEVICES: "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
-    runtime: nvidia
     volumes:
       - ./config.ini:/app/config.ini:ro
       - d:/stock/shared_models:/models:ro
