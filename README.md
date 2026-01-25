@@ -95,8 +95,6 @@ python run.py kr
 ## Docker + cron 실행
 
 JP는 새벽 2시, KR은 새벽 4시에 컨테이너 내부 cron으로 실행하도록 구성했습니다. `model_*.pt`는 Windows 공유 폴더를 마운트해서 사용합니다.
-JP 데이터 수집은 Docker에서 기본 헤드리스 크롬으로 동작합니다 (`CHROME_HEADLESS=1`).
-컨테이너에는 `chromium`/`chromium-driver`가 포함되며, 필요하면 `CHROMEDRIVER_PATH`로 경로를 지정할 수 있습니다.
 
 ## GPU 사용 (PyTorch CUDA)
 
@@ -111,7 +109,7 @@ docker compose run --rm stocksearcher nvidia-smi
 
 ### 1. config.ini 출력 경로 조정
 
-컨테이너는 `OUTPUT_DIR=/data` 환경변수를 사용하므로, `config.ini`의 `output_dir`는 로컬 경로로 유지해도 됩니다.
+컨테이너에서 로그/CSV를 남기려면 `output_dir`를 `/data`로 바꾸는 것을 권장합니다.
 데이터셋 로그는 `/data/log/logfile_*.log`로 저장됩니다.
 
 ```ini
@@ -171,20 +169,24 @@ docker compose logs -f
 
 ```bash
 docker compose run --rm stocksearcher python dataset_jp.py
+docker compose exec stocksearcher python dataset_jp.py
 ```
 
 ```bash
 docker compose run --rm stocksearcher python dataset_kr.py
+docker compose exec stocksearcher python dataset_kr.py
 ```
 
 #### 추론 수동 실행:
 
 ```bash
 docker compose run --rm stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --top-k 20 --save-db
+docker compose exec stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --top-k 20 --save-db
 ```
 
 ```bash
 docker compose run --rm stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --top-k 20 --save-db
+docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --top-k 20 --save-db
 ```
 
 > 참고: `JOB_CMD_JP`/`JOB_CMD_KR`에 작은따옴표(')는 넣지 마세요. cron 파일 생성 시 충돌할 수 있습니다.
@@ -207,6 +209,12 @@ python model_jp.py --model-out d:\stock\StockSearcher\models\model_jp.pt
 python model_jp.py --pos-weight 3.0
 ```
 
+기존 모델 이어서 학습하려면 `--resume`을 사용하세요.
+
+```bash
+python model_jp.py --resume d:\stock\shared_models\model_jp.pt --epochs 10 --model-out d:\stock\shared_models\model_jp_resume.pt
+```
+
 ## 모델 학습 (KR)
 
 KR 모델은 JP와 동일한 방식으로 학습합니다.
@@ -216,6 +224,12 @@ python model_kr.py --seq-len 60 --horizon-days 5 --rise-threshold 0.10 --epochs 
 ```
 
 모델 출력 파일: 현재 작업 폴더에 `model_kr.pt`로 저장됩니다.
+
+기존 모델 이어서 학습하려면 `--resume`을 사용하세요.
+
+```bash
+python model_kr.py --resume d:\stock\shared_models\model_kr.pt --epochs 10 --model-out d:\stock\shared_models\model_kr_resume.pt
+```
 
 ## 추론 (JP)
 
@@ -274,3 +288,18 @@ python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --top-k
 ## 라이선스
 
 본 저장소에는 명시적 라이선스가 포함되어 있지 않습니다. 사용 전 원저작자의 허락을 받으세요.
+
+## 모델 비교 스크립트 (KR)
+
+`scripts/compare_models_kr.ps1`는 hidden_size/num_layers 조합을 자동으로 학습하고,
+각 로그의 최소 `val_loss`를 비교해서 표로 출력합니다.
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/compare_models_kr.ps1
+```
+
+옵션 예시:
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/compare_models_kr.ps1 -Epochs 20 -ModelOutDir d:/stock/shared_models -LogDir logs -PosWeight 8.5
+```

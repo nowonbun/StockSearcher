@@ -67,6 +67,7 @@ def predict_probs(
     log_every: int,
 ) -> List[Tuple[str, float]]:
     results: List[Tuple[str, float]] = []
+    log_every = max(1, log_every)
     mean = mean.reshape(1, 1, -1).astype(np.float32)
     std = std.reshape(1, 1, -1).astype(np.float32)
 
@@ -92,18 +93,26 @@ def predict_probs(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    # 데이터 범위 (통계 및 종목 목록).
     parser.add_argument("--table", default="STOCK_DATA_KR")
     parser.add_argument("--start-date", default=static.start_date)
     parser.add_argument("--end-date", default=static.end_date)
     parser.add_argument("--val-ratio", type=float, default=0.2)
+    # 윈도우/라벨 정의 (특징 계산 + DB 저장에 사용).
     parser.add_argument("--seq-len", type=int, default=60)
     parser.add_argument("--horizon-days", type=int, default=5)
     parser.add_argument("--rise-threshold", type=float, default=0.10)
+    # 추론 기준일/모델 선택.
     parser.add_argument("--as-of", default=str(date.today()))
     parser.add_argument("--model", default="model_kr.pt")
-    parser.add_argument("--top-k", type=int, default=20)
+    parser.add_argument("--hidden-size", type=int, default=128)
+    parser.add_argument("--num-layers", type=int, default=2)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    # 출력 필터링 및 로그.
+    parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--min-prob", type=float, default=None)
     parser.add_argument("--log-every", type=int, default=200)
+    # DB 저장 옵션 및 단일 코드 지정.
     parser.add_argument("--save-db", action="store_true")
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--code", default=None)
@@ -118,15 +127,16 @@ def main() -> None:
         codes = load_codes(args.table, args.start_date, args.end_date)
         if not codes:
             raise RuntimeError("no codes loaded from database")
+    print(f"loaded codes={len(codes)}")
 
     cutoff_date = get_cutoff_date(args.table, args.start_date, args.end_date, args.val_ratio)
     mean, std = compute_feature_stats(args.table, args.start_date, args.end_date, cutoff_date)
 
     model = PriceLSTM(
         input_size=len(FEATURE_COLS),
-        hidden_size=64,
-        num_layers=2,
-        dropout=0.1,
+        hidden_size=args.hidden_size,
+        num_layers=args.num_layers,
+        dropout=args.dropout,
     )
     model.load_state_dict(torch.load(args.model, map_location="cpu"))
     model.eval()
@@ -141,6 +151,7 @@ def main() -> None:
         args.as_of,
         args.log_every,
     )
+    print(f"infer done: {len(results)} results")
     results.sort(key=lambda x: x[1], reverse=True)
 
     if args.min_prob is not None:

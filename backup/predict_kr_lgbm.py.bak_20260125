@@ -2,25 +2,23 @@ from __future__ import annotations
 
 import argparse
 from datetime import date, timedelta
-from typing import Iterable, List, Tuple
+from typing import List, Tuple
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import torch
 
 import function.static as static
 import mysql.connector
-from model_jp import (
+from model_kr import (
     FEATURE_COLS,
-    PriceLSTM,
+    CLOSE_INDEX,
+    _build_not_null_clause,
     compute_feature_stats,
     get_cutoff_date,
     load_codes,
 )
-
-
-def _build_not_null_clause(cols: Iterable[str]) -> str:
-    return " AND ".join([f"{c} IS NOT NULL" for c in cols])
+from model_jp_lgbm import _window_features
 
 
 def _fetch_sequence(
@@ -38,7 +36,7 @@ def _fetch_sequence(
             f"WHERE code = %s AND date <= %s AND {not_null} "
             "ORDER BY date DESC LIMIT %s"
         )
-        params: Tuple[object, ...] = (code, cutoff, seq_len)
+        params = (code, cutoff, seq_len)
     else:
         query = (
             f"SELECT {', '.join(FEATURE_COLS)} FROM {table} "
@@ -57,7 +55,7 @@ def _fetch_sequence(
 
 
 def predict_probs(
-    model: torch.nn.Module,
+    model: lgb.Booster,
     table: str,
     codes: List[str],
     seq_len: int,
@@ -67,11 +65,7 @@ def predict_probs(
     log_every: int,
 ) -> List[Tuple[str, float]]:
     results: List[Tuple[str, float]] = []
-    log_every = max(1, log_every)
-    mean = mean.reshape(1, 1, -1).astype(np.float32)
-    std = std.reshape(1, 1, -1).astype(np.float32)
-
-    conn = mysql.connector.connect(**static.db_config_jp)
+    conn = mysql.connector.connect(**static.db_config_kr)
     try:
         for idx, code in enumerate(codes, start=1):
             if idx == 1 or idx % log_every == 0:
@@ -79,22 +73,20 @@ def predict_probs(
             seq = _fetch_sequence(conn, table, code, seq_len, as_of)
             if seq is None:
                 continue
-            x = (seq[None, ...] - mean) / std
-            x_t = torch.from_numpy(x)
-            with torch.no_grad():
-                logit = model(x_t).item()
-                prob = float(torch.sigmoid(torch.tensor(logit)).item())
+            seq_raw = seq
+            seq_norm = (seq_raw - mean) / std
+            feats = _window_features(seq_norm, seq_raw[:, CLOSE_INDEX])
+            prob = float(model.predict(feats.reshape(1, -1))[0])
             results.append((code, prob))
     finally:
         conn.close()
-
     return results
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     # 데이터 범위 (통계 및 종목 목록).
-    parser.add_argument("--table", default="STOCK_DATA_JP")
+    parser.add_argument("--table", default="STOCK_DATA_KR")
     parser.add_argument("--start-date", default=static.start_date)
     parser.add_argument("--end-date", default=static.end_date)
     parser.add_argument("--val-ratio", type=float, default=0.2)
@@ -104,18 +96,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rise-threshold", type=float, default=0.10)
     # 추론 기준일/모델 선택.
     parser.add_argument("--as-of", default=str(date.today()))
-    parser.add_argument("--model", default="model_jp.pt")
-    parser.add_argument("--hidden-size", type=int, default=256)
-    parser.add_argument("--num-layers", type=int, default=2)
-    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--model", default="model_kr_lgbm.model")
     # 출력 필터링 및 로그.
-    parser.add_argument("--top-k", type=int, default=100)
+    parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--min-prob", type=float, default=None)
     parser.add_argument("--log-every", type=int, default=200)
-    # DB 저장 옵션 및 단일 코드 지정.
+    parser.add_argument("--code", default=None)
+    # DB 저장 옵션.
     parser.add_argument("--save-db", action="store_true")
     parser.add_argument("--run-name", default=None)
-    parser.add_argument("--code", default=None)
     return parser.parse_args()
 
 
@@ -132,14 +121,7 @@ def main() -> None:
     cutoff_date = get_cutoff_date(args.table, args.start_date, args.end_date, args.val_ratio)
     mean, std = compute_feature_stats(args.table, args.start_date, args.end_date, cutoff_date)
 
-    model = PriceLSTM(
-        input_size=len(FEATURE_COLS),
-        hidden_size=args.hidden_size,
-        num_layers=args.num_layers,
-        dropout=args.dropout,
-    )
-    model.load_state_dict(torch.load(args.model, map_location="cpu"))
-    model.eval()
+    model = lgb.Booster(model_file=args.model)
 
     results = predict_probs(
         model,
@@ -151,7 +133,6 @@ def main() -> None:
         args.as_of,
         args.log_every,
     )
-    print(f"infer done: {len(results)} results")
     results.sort(key=lambda x: x[1], reverse=True)
 
     if args.min_prob is not None:
@@ -172,12 +153,12 @@ def main() -> None:
 
 
 def save_predictions(args: argparse.Namespace, rows: List[Tuple[str, float]]) -> None:
-    conn = mysql.connector.connect(**static.db_config_jp)
+    conn = mysql.connector.connect(**static.db_config_kr)
     try:
         with conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO STOCK_PREDICT_JP
+                INSERT INTO STOCK_PREDICT_KR
                     (as_of, code, probability, run_name, seq_len, horizon_days, rise_threshold, created_at)
                 VALUES
                     (%s, %s, %s, %s, %s, %s, %s, now())
@@ -203,7 +184,7 @@ def save_predictions(args: argparse.Namespace, rows: List[Tuple[str, float]]) ->
                 ],
             )
         conn.commit()
-        print(f"saved {len(rows)} rows to STOCK_PREDICT_JP")
+        print(f"saved {len(rows)} rows to STOCK_PREDICT_KR")
     finally:
         conn.close()
 

@@ -1,0 +1,279 @@
+from __future__ import annotations
+
+import argparse
+import time
+from typing import List, Tuple
+
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+
+import function.static as static
+import mysql.connector
+from model_kr import (
+    FEATURE_COLS,
+    CLOSE_INDEX,
+    _build_not_null_clause,
+    compute_feature_stats,
+    get_cutoff_date,
+    load_codes,
+)
+from model_jp_lgbm import _window_features
+
+
+def _fetch_rows(
+    conn: mysql.connector.MySQLConnection,
+    table: str,
+    code: str,
+    start_date: str | None,
+    end_date: str | None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    not_null = _build_not_null_clause(FEATURE_COLS)
+    where = f"code = %s AND date >= %s AND date <= %s AND {not_null}"
+    query = (
+        f"SELECT date, {', '.join(FEATURE_COLS)} FROM {table} "
+        f"WHERE {where} ORDER BY date"
+    )
+    params = (code, start_date, end_date)
+    with conn.cursor() as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
+    if not rows:
+        return np.array([], dtype="datetime64[D]"), np.empty((0, len(FEATURE_COLS)), dtype=np.float32)
+    dates = np.array([r[0] for r in rows])
+    feats = np.array([r[1:] for r in rows], dtype=np.float32)
+    return dates, feats
+
+
+def _build_dataset(
+    table: str,
+    codes: List[str],
+    start_date: str,
+    end_date: str,
+    seq_len: int,
+    horizon_days: int,
+    rise_threshold: float,
+    cutoff_date: pd.Timestamp,
+    split: str,
+    mean: np.ndarray,
+    std: np.ndarray,
+    log_codes: bool,
+    log_every: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    features: List[np.ndarray] = []
+    labels: List[int] = []
+    log_every = max(1, log_every)
+    conn = mysql.connector.connect(**static.db_config_kr)
+    try:
+        for idx, code in enumerate(codes, start=1):
+            dates, feats = _fetch_rows(conn, table, code, start_date, end_date)
+            if feats.shape[0] < seq_len + horizon_days:
+                continue
+            if log_codes and (idx == 1 or idx % log_every == 0):
+                print(f"[{split}] loading code={code} rows={len(feats)} ({idx})")
+            feats_raw = feats
+            feats_norm = (feats_raw - mean) / std
+            closes_raw = feats_raw[:, CLOSE_INDEX]
+            max_start = len(feats_raw) - (seq_len + horizon_days) + 1
+            for i in range(max_start):
+                end_idx = i + seq_len - 1
+                label_date = pd.Timestamp(dates[end_idx])
+                if split == "train" and label_date > cutoff_date:
+                    continue
+                if split == "val" and label_date <= cutoff_date:
+                    continue
+                base = closes_raw[end_idx]
+                if base == 0:
+                    continue
+                future_slice = closes_raw[end_idx + 1 : end_idx + horizon_days + 1]
+                if future_slice.size == 0:
+                    continue
+                target = base * (1.0 + rise_threshold)
+                label = 1 if float(future_slice.max()) >= target else 0
+                features.append(
+                    _window_features(
+                        feats_norm[i : i + seq_len],
+                        closes_raw[i : i + seq_len],
+                    )
+                )
+                labels.append(label)
+    finally:
+        conn.close()
+
+    if not features:
+        return np.empty((0, len(FEATURE_COLS) * 5 + 1), dtype=np.float32), np.array([], dtype=np.int64)
+    return np.vstack(features).astype(np.float32), np.array(labels, dtype=np.int64)
+
+
+def _evaluate(y_true: np.ndarray, probs: np.ndarray, threshold: float) -> Tuple[float, float, float]:
+    preds = (probs >= threshold).astype(np.int64)
+    tp = int(((preds == 1) & (y_true == 1)).sum())
+    fp = int(((preds == 1) & (y_true == 0)).sum())
+    fn = int(((preds == 0) & (y_true == 1)).sum())
+    acc = float((preds == y_true).mean()) if y_true.size else 0.0
+    prec = tp / (tp + fp) if (tp + fp) else 0.0
+    rec = tp / (tp + fn) if (tp + fn) else 0.0
+    return acc, prec, rec
+
+
+def _log_dataset_health(x: np.ndarray, y: np.ndarray, split: str) -> None:
+    if y.size:
+        classes, counts = np.unique(y, return_counts=True)
+        class_str = ", ".join([f"{int(c)}={int(n)}" for c, n in zip(classes, counts)])
+    else:
+        class_str = "empty"
+    finite_ratio = float(np.isfinite(x).mean()) if x.size else 0.0
+    zero_std = int((np.nanstd(x, axis=0) == 0).sum()) if x.size else 0
+    print(
+        f"[{split}] labels={class_str} finite={finite_ratio:.6f} "
+        f"zero_std_features={zero_std}/{x.shape[1] if x.ndim == 2 else 0}"
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    # 데이터 범위 (종목 목록/통계 계산에 사용).
+    parser.add_argument("--table", default="STOCK_DATA_KR")
+    parser.add_argument("--start-date", default=static.start_date)
+    parser.add_argument("--end-date", default=static.end_date)
+    parser.add_argument("--val-ratio", type=float, default=0.2)
+    # 윈도우/라벨 정의.
+    parser.add_argument("--seq-len", type=int, default=60)
+    parser.add_argument("--horizon-days", type=int, default=5)
+    parser.add_argument("--rise-threshold", type=float, default=0.10)
+    # 출력 및 LightGBM 학습 파라미터.
+    parser.add_argument("--model-out", default="model_kr_lgbm.model")
+    parser.add_argument("--num-leaves", type=int, default=63)
+    parser.add_argument("--max-depth", type=int, default=-1)
+    parser.add_argument("--learning-rate", type=float, default=0.05)
+    parser.add_argument("--n-estimators", type=int, default=500)
+    parser.add_argument("--feature-fraction", type=float, default=0.9)
+    parser.add_argument("--bagging-fraction", type=float, default=0.8)
+    parser.add_argument("--bagging-freq", type=int, default=1)
+    # 클래스 불균형/디바이스/평가.
+    parser.add_argument("--pos-weight", type=float, default=1.0)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "gpu"])
+    parser.add_argument("--eval-threshold", type=float, default=0.5)
+    parser.add_argument("--early-stopping", type=int, default=50)
+    parser.add_argument("--min-data-in-leaf", type=int, default=20)
+    parser.add_argument("--min-data-in-bin", type=int, default=1)
+    parser.add_argument("--min-sum-hessian-in-leaf", type=float, default=1e-3)
+    # 이어 학습.
+    parser.add_argument("--resume", default=None)
+    # 데이터셋 생성 진행 로그.
+    parser.add_argument("--log-codes", action="store_true")
+    parser.add_argument("--log-every", type=int, default=50)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    t0 = time.perf_counter()
+    codes = load_codes(args.table, args.start_date, args.end_date)
+    if not codes:
+        raise RuntimeError("no codes loaded from database")
+    print(f"loaded codes={len(codes)}")
+    cutoff_date = get_cutoff_date(args.table, args.start_date, args.end_date, args.val_ratio)
+    t_stats_start = time.perf_counter()
+    mean, std = compute_feature_stats(args.table, args.start_date, args.end_date, cutoff_date)
+    print(f"feature stats in {time.perf_counter() - t_stats_start:.2f}s")
+
+    t_train_start = time.perf_counter()
+    x_train, y_train = _build_dataset(
+        args.table,
+        codes,
+        args.start_date,
+        args.end_date,
+        args.seq_len,
+        args.horizon_days,
+        args.rise_threshold,
+        cutoff_date,
+        "train",
+        mean,
+        std,
+        args.log_codes,
+        args.log_every,
+    )
+    print(f"train dataset in {time.perf_counter() - t_train_start:.2f}s")
+    t_val_start = time.perf_counter()
+    x_val, y_val = _build_dataset(
+        args.table,
+        codes,
+        args.start_date,
+        args.end_date,
+        args.seq_len,
+        args.horizon_days,
+        args.rise_threshold,
+        cutoff_date,
+        "val",
+        mean,
+        std,
+        args.log_codes,
+        args.log_every,
+    )
+    print(f"val dataset in {time.perf_counter() - t_val_start:.2f}s")
+
+    if x_train.size == 0 or x_val.size == 0:
+        raise RuntimeError("empty train/val dataset")
+    print(f"train rows={x_train.shape[0]} val rows={x_val.shape[0]}")
+    _log_dataset_health(x_train, y_train, "train")
+    _log_dataset_health(x_val, y_val, "val")
+    if y_train.size:
+        pos_ratio = float(y_train.mean())
+        if pos_ratio > 0.99 or pos_ratio < 0.01:
+            print(
+                f"[warn] extreme class imbalance: pos_ratio={pos_ratio:.6f} "
+                "consider raising --rise-threshold or lowering --pos-weight"
+            )
+
+    params = {
+        "objective": "binary",
+        "metric": "binary_logloss",
+        "num_leaves": args.num_leaves,
+        "max_depth": args.max_depth,
+        "learning_rate": args.learning_rate,
+        "feature_fraction": args.feature_fraction,
+        "bagging_fraction": args.bagging_fraction,
+        "bagging_freq": args.bagging_freq,
+        "min_data_in_leaf": args.min_data_in_leaf,
+        "min_data_in_bin": args.min_data_in_bin,
+        "min_sum_hessian_in_leaf": args.min_sum_hessian_in_leaf,
+        "device_type": args.device,
+        "verbosity": -1,
+    }
+    if args.pos_weight is not None:
+        params["scale_pos_weight"] = args.pos_weight
+
+    train_set = lgb.Dataset(x_train, label=y_train)
+    val_set = lgb.Dataset(x_val, label=y_val)
+
+    callbacks = [lgb.log_evaluation(period=10)]
+    if args.early_stopping > 0:
+        callbacks.append(lgb.early_stopping(args.early_stopping))
+
+    t_fit_start = time.perf_counter()
+    booster = lgb.train(
+        params,
+        train_set,
+        num_boost_round=args.n_estimators,
+        valid_sets=[val_set],
+        init_model=args.resume,
+        keep_training_booster=bool(args.resume),
+        callbacks=callbacks,
+    )
+    print(f"training in {time.perf_counter() - t_fit_start:.2f}s")
+
+    val_probs = booster.predict(x_val)
+    acc, prec, rec = _evaluate(y_val, val_probs, args.eval_threshold)
+    print(
+        f"val acc={acc:.4f} prec={prec:.4f} rec={rec:.4f} "
+        f"thr={args.eval_threshold:.2f}"
+    )
+
+    booster.save_model(args.model_out)
+    print(f"saved model: {args.model_out}")
+    print(f"total time {time.perf_counter() - t0:.2f}s")
+
+
+if __name__ == "__main__":
+    main()

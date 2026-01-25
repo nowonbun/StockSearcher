@@ -236,6 +236,7 @@ def train_loop(
     lr: float,
     model_out: str,
     pos_weight: float | None,
+    eval_threshold: float,
 ) -> None:
     if pos_weight is not None:
         criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=device))
@@ -275,7 +276,7 @@ def train_loop(
                 loss = criterion(pred, y)
                 val_loss += loss.item() * x.size(0)
                 probs = torch.sigmoid(pred)
-                preds = (probs >= 0.5).float()
+                preds = (probs >= eval_threshold).float()
                 correct += (preds == y).sum().item()
                 tp += ((preds == 1) & (y == 1)).sum().item()
                 fp += ((preds == 1) & (y == 0)).sum().item()
@@ -288,7 +289,7 @@ def train_loop(
 
         print(
             f"epoch={epoch} train_loss={train_loss:.6f} val_loss={val_loss:.6f} "
-            f"acc={acc:.4f} prec={prec:.4f} rec={rec:.4f}"
+            f"acc={acc:.4f} prec={prec:.4f} rec={rec:.4f} thr={eval_threshold:.2f}"
         )
 
         if val_loss < best_val:
@@ -298,23 +299,32 @@ def train_loop(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    # 데이터 범위.
     parser.add_argument("--table", default="STOCK_DATA_JP")
     parser.add_argument("--start-date", default=static.start_date)
     parser.add_argument("--end-date", default=static.end_date)
+    # 윈도우/라벨 정의.
     parser.add_argument("--seq-len", type=int, default=60)
     parser.add_argument("--horizon-days", type=int, default=5)
     parser.add_argument("--rise-threshold", type=float, default=0.10)
+    # 학습/검증 분리.
     parser.add_argument("--val-ratio", type=float, default=0.2)
+    # 학습 루프.
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--hidden-size", type=int, default=64)
+    # 모델 구조.
+    parser.add_argument("--hidden-size", type=int, default=256)
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.1)
+    # 체크포인트 및 클래스 불균형.
     parser.add_argument("--model-out", default="model_jp.pt")
-    parser.add_argument("--pos-weight", type=float, default=None)
+    parser.add_argument("--resume", default=None)
+    parser.add_argument("--pos-weight", type=float, default=11.66)
+    # 진행 로그 및 평가.
     parser.add_argument("--log-codes", action="store_true")
     parser.add_argument("--log-every", type=int, default=50)
+    parser.add_argument("--eval-threshold", type=float, default=0.5)
     return parser.parse_args()
 
 
@@ -362,13 +372,16 @@ def main() -> None:
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     model = PriceLSTM(
         input_size=len(FEATURE_COLS),
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
         dropout=args.dropout,
     ).to(device)
+    if args.resume:
+        model.load_state_dict(torch.load(args.resume, map_location=device))
 
     train_loop(
         model,
@@ -379,6 +392,7 @@ def main() -> None:
         args.lr,
         args.model_out,
         args.pos_weight,
+        args.eval_threshold,
     )
 
 

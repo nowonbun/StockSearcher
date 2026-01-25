@@ -76,6 +76,22 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_KR (
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS STOCK_PREDICT_KR (
+    as_of         DATE         NOT NULL,
+    code          VARCHAR(12)  NOT NULL,
+    probability   DECIMAL(10,6) NOT NULL,
+    run_name      VARCHAR(200) NOT NULL,
+    seq_len       INT          NOT NULL,
+    horizon_days  INT          NOT NULL,
+    rise_threshold DECIMAL(6,4) NOT NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (as_of, code),
+    KEY idx_stock_predict_kr_asof (as_of),
+    CONSTRAINT fk_stock_predict_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- -----------------------------
 -- JPX stock master & price tables
 -- -----------------------------
@@ -170,23 +186,7 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_JP (
         ON UPDATE CASCADE
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS STOCK_PREDICT_KR (
-    as_of         DATE         NOT NULL,
-    code          VARCHAR(12)  NOT NULL,
-    probability   DECIMAL(10,6) NOT NULL,
-    run_name      VARCHAR(200) NOT NULL,
-    seq_len       INT          NOT NULL,
-    horizon_days  INT          NOT NULL,
-    rise_threshold DECIMAL(6,4) NOT NULL,
-    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (as_of, code),
-    KEY idx_stock_predict_kr_asof (as_of),
-    CONSTRAINT fk_stock_predict_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+--COMMON -----------------------------
 CREATE TABLE IF NOT EXISTS DATE_KEY (
     idx         INT      NOT NULL,
     date        DATE     NOT NULL,
