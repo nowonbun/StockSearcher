@@ -180,13 +180,13 @@ docker compose exec stocksearcher python dataset_kr.py
 #### 추론 수동 실행:
 
 ```bash
-docker compose run --rm stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --top-k 20 --save-db
-docker compose exec stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --top-k 20 --save-db
+docker compose run --rm stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --save-db
+docker compose exec stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --save-db
 ```
 
 ```bash
-docker compose run --rm stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --top-k 20 --save-db
-docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --top-k 20 --save-db
+docker compose run --rm stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --save-db
+docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --save-db
 ```
 
 > 참고: `JOB_CMD_JP`/`JOB_CMD_KR`에 작은따옴표(')는 넣지 마세요. cron 파일 생성 시 충돌할 수 있습니다.
