@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from datetime import datetime
 import json
 import time
@@ -379,7 +380,7 @@ def insert_rows(table: str, code: str, rows: List[List[Any]]) -> None:
 # ----------------------------
 # 수집 파이프라인
 # ----------------------------
-def process_symbol(code: str) -> None:
+def process_symbol(code: str, include_week: bool = False) -> None:
     """단일 심볼(code)에 대해 일/주봉 수집 및 적재 수행."""
     # 일봉
     df_daily = fdr.DataReader(code, static.start_date, static.end_date)
@@ -387,7 +388,7 @@ def process_symbol(code: str) -> None:
     insert_rows("STOCK_DATA_KR", code, rows)
 
     # 주봉 (금요일 기준 주간 집계)
-    if df_daily is not None and not df_daily.empty:
+    if include_week and df_daily is not None and not df_daily.empty:
         weekly = df_daily.resample("W-FRI").agg(
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
         )
@@ -395,7 +396,7 @@ def process_symbol(code: str) -> None:
         insert_rows("STOCK_DATA_WEEK_KR", code, w_rows)
 
 
-def main() -> None:
+def main(include_week: bool = False) -> None:
     global _LOGGER
     common.check_directory(static.dir)
     common.check_directory(os.path.join(static.dir, "log"))
@@ -409,7 +410,7 @@ def main() -> None:
     max_workers = 5
     _log(f"수집 대상 종목 수: {len(codes)} (max_workers={max_workers})")
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        executor.map(process_symbol, codes)
+        executor.map(partial(process_symbol, include_week=include_week), codes)
 
 
 if __name__ == "__main__":

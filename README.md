@@ -157,9 +157,9 @@ docker compose logs -f
 
 윈도우에서 cron 로그 확인:
 
-`d:/stock/stock_searcher/log/cron.log`
+`d:/stock/stock_searcher/log/cron-YYYY-MM-DD.log`
 
-> cron으로 실행되는 dataset/model/predict의 표준 출력은 모두 위 cron 로그에 기록됩니다.
+> cron으로 실행되는 dataset/model/predict의 표준 출력은 날짜별 로그 파일에 기록됩니다. 파일명 접두사는 `CRON_LOG_PATH` 기준입니다.
 
 ### 4. 수동 실행 (원할 때 1회 실행)
 
@@ -170,11 +170,13 @@ docker compose logs -f
 ```bash
 docker compose run --rm stocksearcher python dataset_jp.py
 docker compose exec stocksearcher python dataset_jp.py
+docker compose exec -d stocksearcher python dataset_jp.py
 ```
 
 ```bash
 docker compose run --rm stocksearcher python dataset_kr.py
 docker compose exec stocksearcher python dataset_kr.py
+docker compose exec -d stocksearcher python dataset_kr.py
 ```
 
 #### 추론 수동 실행:

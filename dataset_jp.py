@@ -372,7 +372,7 @@ def process_symbol(
     insert_rows(table, code, rows, db_config, include_lowerband60_3)
 
 
-def main() -> None:
+def main(include_week: bool = False) -> None:
     global _LOGGER
     common.check_directory(static.dir)
     common.check_directory(os.path.join(static.dir, "log"))
@@ -413,16 +413,17 @@ def main() -> None:
                     "STOCK_DATA_JP",
                     True,  # lowerband60_3 포함
                 )
-                # 주봉
-                process_symbol(
-                    driver,
-                    code,
-                    static.period,
-                    static.db_config_jp,
-                    stock_lib.FREQUENCY_TYPE_WEEK,
-                    "STOCK_DATA_WEEK_JP",
-                    False,  # weekly 테이블은 lowerband60_3 미포함(기존 동작 준수)
-                )
+                if include_week:
+                    # 주봉
+                    process_symbol(
+                        driver,
+                        code,
+                        static.period,
+                        static.db_config_jp,
+                        stock_lib.FREQUENCY_TYPE_WEEK,
+                        "STOCK_DATA_WEEK_JP",
+                        False,  # weekly 테이블은 lowerband60_3 미포함(기존 동작 준수)
+                    )
             except Exception as e:
                 _log(str(e))
     finally:

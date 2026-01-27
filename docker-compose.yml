@@ -4,8 +4,8 @@ services:
     environment:
       TZ: Asia/Seoul
       OUTPUT_DIR: "/data"
-      CRON_SCHEDULE_JP: "0 2 * * *"
-      CRON_SCHEDULE_KR: "0 4 * * *"
+      CRON_SCHEDULE_JP: "0 18 * * *"
+      CRON_SCHEDULE_KR: "0 20 * * *"
       JOB_CMD_JP: "python dataset_jp.py && python predict_jp.py --model /models/model_jp.pt --seq-len 60 --save-db"
       JOB_CMD_KR: "python dataset_kr.py && python predict_kr.py --model /models/model_kr.pt --seq-len 60 --save-db"
       CRON_LOG_PATH: "/data/log/cron.log"
