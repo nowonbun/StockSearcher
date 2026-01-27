@@ -13,6 +13,6 @@ services:
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     volumes:
       - ./config.ini:/app/config.ini:ro
-      - d:/stock/shared_models:/models:ro
-      - d:/stock/stock_searcher:/data
+      - /root/stock/models:/models:ro
+      - /root/stock/data:/data
     restart: unless-stopped
