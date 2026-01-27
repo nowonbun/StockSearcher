@@ -400,7 +400,7 @@ def main(include_week: bool = False) -> None:
     global _LOGGER
     common.check_directory(static.dir)
     common.check_directory(os.path.join(static.dir, "log"))
-    _LOGGER = common.setup_custom_logger(static.dir, "create_stock_dataset_kr2")
+_LOGGER = common.setup_custom_logger(static.dir, "create_stock_dataset_kr")
 
     # 목록 저장 → 목록 로드 → 병렬 수집
     save_stock_list()

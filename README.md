@@ -110,7 +110,7 @@ docker compose run --rm stocksearcher nvidia-smi
 ### 1. config.ini 출력 경로 조정
 
 컨테이너에서 로그/CSV를 남기려면 `output_dir`를 `/data`로 바꾸는 것을 권장합니다.
-데이터셋 로그는 `/data/log/logfile_*.log`로 저장됩니다.
+데이터셋 로그는 `/data/log/logfile_*_YYYY-MM-DD.log`로 저장됩니다.
 
 ```ini
 [default]
@@ -273,7 +273,7 @@ python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --top-k
 
 ## 출력 및 로그
 
-- `output_dir` 하위에 `log/logfile_*.log` 형태로 로그가 생성됩니다.
+- `output_dir` 하위에 `log/logfile_*_YYYY-MM-DD.log` 형태로 로그가 생성됩니다.
 - 데이터베이스 적재 결과와 에러 메시지가 로그에 기록됩니다.
 
 ## 자주 묻는 질문
