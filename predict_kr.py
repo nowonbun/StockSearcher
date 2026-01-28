@@ -16,6 +16,7 @@ from model_kr import (
     compute_feature_stats,
     get_cutoff_date,
     load_codes,
+    TRANS_AMNT_INDEX,
 )
 
 
@@ -65,6 +66,8 @@ def predict_probs(
     std: np.ndarray,
     as_of: str | None,
     log_every: int,
+    min_trans_amnt_sum: float | None,
+    liquidity_days: int,
 ) -> List[Tuple[str, float]]:
     results: List[Tuple[str, float]] = []
     log_every = max(1, log_every)
@@ -79,6 +82,12 @@ def predict_probs(
             seq = _fetch_sequence(conn, table, code, seq_len, as_of)
             if seq is None:
                 continue
+            if min_trans_amnt_sum is not None:
+                if liquidity_days > seq_len:
+                    raise ValueError("liquidity_days cannot exceed seq_len")
+                liq_slice = seq[-liquidity_days:, TRANS_AMNT_INDEX]
+                if float(liq_slice.sum()) < min_trans_amnt_sum:
+                    continue
             x = (seq[None, ...] - mean) / std
             x_t = torch.from_numpy(x)
             with torch.no_grad():
@@ -94,28 +103,30 @@ def predict_probs(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     # 데이터 범위 (통계 및 종목 목록).
-    parser.add_argument("--table", default="STOCK_DATA_KR")
-    parser.add_argument("--start-date", default=static.start_date)
-    parser.add_argument("--end-date", default=static.end_date)
-    parser.add_argument("--val-ratio", type=float, default=0.2)
+    parser.add_argument("--table", default="STOCK_DATA_KR", help="DB 테이블 이름")
+    parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
+    parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
+    parser.add_argument("--val-ratio", type=float, default=0.2, help="날짜 기준 검증 비율")
     # 윈도우/라벨 정의 (특징 계산 + DB 저장에 사용).
-    parser.add_argument("--seq-len", type=int, default=60)
-    parser.add_argument("--horizon-days", type=int, default=5)
-    parser.add_argument("--rise-threshold", type=float, default=0.10)
+    parser.add_argument("--seq-len", type=int, default=60, help="시퀀스 길이(일)")
+    parser.add_argument("--horizon-days", type=int, default=5, help="라벨 기준 기간(일)")
+    parser.add_argument("--rise-threshold", type=float, default=0.10, help="목표 상승률 (예: 0.10 = +10%)")
+    parser.add_argument("--min-trans-amnt-sum", type=float, default=2000000000 * 5, help="유동성 기간 내 TransAmnt 합 최소값")
+    parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 추론 기준일/모델 선택.
-    parser.add_argument("--as-of", default=str(date.today()))
-    parser.add_argument("--model", default="model_kr.pt")
-    parser.add_argument("--hidden-size", type=int, default=128)
-    parser.add_argument("--num-layers", type=int, default=2)
-    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--as-of", default=str(date.today()), help="예측 기준일 (YYYY-MM-DD)")
+    parser.add_argument("--model", default="model_kr.pt", help="모델 경로")
+    parser.add_argument("--hidden-size", type=int, default=128, help="LSTM 은닉 크기(학습과 동일)")
+    parser.add_argument("--num-layers", type=int, default=2, help="LSTM 레이어 수(학습과 동일)")
+    parser.add_argument("--dropout", type=float, default=0.1, help="드롭아웃(학습과 동일)")
     # 출력 필터링 및 로그.
-    parser.add_argument("--top-k", type=int, default=100)
-    parser.add_argument("--min-prob", type=float, default=None)
-    parser.add_argument("--log-every", type=int, default=200)
+    parser.add_argument("--top-k", type=int, default=100, help="확률 상위 K개")
+    parser.add_argument("--min-prob", type=float, default=None, help="확률 하한 필터")
+    parser.add_argument("--log-every", type=int, default=200, help="코드 로그 출력 간격")
     # DB 저장 옵션 및 단일 코드 지정.
-    parser.add_argument("--save-db", action="store_true")
-    parser.add_argument("--run-name", default=None)
-    parser.add_argument("--code", default=None)
+    parser.add_argument("--save-db", action="store_true", help="DB 저장")
+    parser.add_argument("--run-name", default=None, help="DB 저장용 태그")
+    parser.add_argument("--code", default=None, help="단일 코드 예측")
     return parser.parse_args()
 
 
@@ -150,6 +161,8 @@ def main() -> None:
         std,
         args.as_of,
         args.log_every,
+        args.min_trans_amnt_sum,
+        args.liquidity_days,
     )
     print(f"infer done: {len(results)} results")
     results.sort(key=lambda x: x[1], reverse=True)

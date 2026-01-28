@@ -35,6 +35,7 @@ FEATURE_COLS = [
 ]
 
 CLOSE_INDEX = FEATURE_COLS.index("Close")
+TRANS_AMNT_INDEX = FEATURE_COLS.index("TransAmnt")
 
 
 class PriceLSTM(nn.Module):
@@ -161,6 +162,9 @@ class WindowIterableDataset(IterableDataset):
         std: np.ndarray,
         log_codes: bool,
         log_every: int,
+        max_drawdown: float = 0.03,
+        min_trans_amnt_sum: float | None = None,
+        liquidity_days: int = 5,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -176,6 +180,11 @@ class WindowIterableDataset(IterableDataset):
         self.end_date = end_date
         self.log_codes = log_codes
         self.log_every = max(1, log_every)
+        self.max_drawdown = max_drawdown
+        self.min_trans_amnt_sum = min_trans_amnt_sum
+        self.liquidity_days = liquidity_days
+        if self.liquidity_days > self.seq_len:
+            raise ValueError("liquidity_days cannot exceed seq_len")
 
     def __iter__(self):
         date_clause, date_params = _build_date_clause(self.start_date, self.end_date)
@@ -216,11 +225,20 @@ class WindowIterableDataset(IterableDataset):
                         base = closes[end_idx]
                         if base == 0:
                             continue
-                        future_slice = closes[end_idx + 1 : end_idx + self.horizon_days + 1]
-                        if future_slice.size == 0:
+                        if self.min_trans_amnt_sum is not None:
+                            liq_start = end_idx - self.liquidity_days + 1
+                            liq_slice = features[liq_start : end_idx + 1, TRANS_AMNT_INDEX]
+                            if float(liq_slice.sum()) < self.min_trans_amnt_sum:
+                                continue
+                        future_idx = end_idx + self.horizon_days
+                        if future_idx >= len(closes):
                             continue
                         target = base * (1.0 + self.rise_threshold)
-                        label = 1.0 if float(future_slice.max()) >= target else 0.0
+                        floor = base * (1.0 - self.max_drawdown)
+                        window = closes[end_idx + 1 : future_idx + 1]
+                        if window.size == 0:
+                            continue
+                        label = 1.0 if float(closes[future_idx]) >= target and float(window.min()) >= floor else 0.0
                         x = (features[i : i + self.seq_len][None, ...] - self.mean) / self.std
                         yield torch.from_numpy(x.squeeze(0)), torch.tensor(label, dtype=torch.float32)
         finally:
@@ -236,16 +254,28 @@ def train_loop(
     lr: float,
     model_out: str,
     pos_weight: float | None,
+    pos_weight_final: float | None,
     eval_threshold: float,
 ) -> None:
-    if pos_weight is not None:
-        criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=device))
+    def build_criterion(weight: float | None) -> nn.Module:
+        if weight is not None:
+            return nn.BCEWithLogitsLoss(pos_weight=torch.tensor([weight], device=device))
+        return nn.BCEWithLogitsLoss()
+
+    if pos_weight is not None and pos_weight_final is not None and epochs > 1:
+        weight_step = (pos_weight_final - pos_weight) / (epochs - 1)
     else:
-        criterion = nn.BCEWithLogitsLoss()
+        weight_step = 0.0
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     best_val = float("inf")
     for epoch in range(1, epochs + 1):
+        if pos_weight is not None and pos_weight_final is not None:
+            current_weight = pos_weight + weight_step * (epoch - 1)
+        else:
+            current_weight = pos_weight
+        criterion = build_criterion(current_weight)
+
         model.train()
         train_loss = 0.0
         train_count = 0
@@ -290,6 +320,7 @@ def train_loop(
         print(
             f"epoch={epoch} train_loss={train_loss:.6f} val_loss={val_loss:.6f} "
             f"acc={acc:.4f} prec={prec:.4f} rec={rec:.4f} thr={eval_threshold:.2f}"
+            + (f" pw={current_weight:.4f}" if current_weight is not None else "")
         )
 
         if val_loss < best_val:
@@ -300,31 +331,35 @@ def train_loop(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     # 데이터 범위.
-    parser.add_argument("--table", default="STOCK_DATA_JP")
-    parser.add_argument("--start-date", default=static.start_date)
-    parser.add_argument("--end-date", default=static.end_date)
+    parser.add_argument("--table", default="STOCK_DATA_JP", help="DB 테이블 이름")
+    parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
+    parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
     # 윈도우/라벨 정의.
-    parser.add_argument("--seq-len", type=int, default=60)
-    parser.add_argument("--horizon-days", type=int, default=5)
-    parser.add_argument("--rise-threshold", type=float, default=0.10)
+    parser.add_argument("--seq-len", type=int, default=60, help="시퀀스 길이(일)")
+    parser.add_argument("--horizon-days", type=int, default=5, help="라벨 기준 기간(일)")
+    parser.add_argument("--rise-threshold", type=float, default=0.10, help="목표 상승률 (예: 0.10 = +10%)")
+    parser.add_argument("--max-drawdown", type=float, default=0.03, help="기간 내 허용 최대 낙폭")
+    parser.add_argument("--min-trans-amnt-sum", type=float, default=200000000 * 5, help="유동성 기간 내 TransAmnt 합 최소값")
+    parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 학습/검증 분리.
-    parser.add_argument("--val-ratio", type=float, default=0.2)
+    parser.add_argument("--val-ratio", type=float, default=0.2, help="날짜 기준 검증 비율")
     # 학습 루프.
-    parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--batch-size", type=int, default=2048, help="배치 크기")
+    parser.add_argument("--epochs", type=int, default=20, help="학습 에폭 수")
+    parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     # 모델 구조.
-    parser.add_argument("--hidden-size", type=int, default=256)
-    parser.add_argument("--num-layers", type=int, default=2)
-    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--hidden-size", type=int, default=128, help="LSTM 은닉 크기")
+    parser.add_argument("--num-layers", type=int, default=2, help="LSTM 레이어 수")
+    parser.add_argument("--dropout", type=float, default=0.1, help="드롭아웃(레이어 2개 이상일 때만 적용)")
     # 체크포인트 및 클래스 불균형.
-    parser.add_argument("--model-out", default="model_jp.pt")
-    parser.add_argument("--resume", default=None)
-    parser.add_argument("--pos-weight", type=float, default=11.66)
+    parser.add_argument("--model-out", default="model_jp.pt", help="모델 저장 경로")
+    parser.add_argument("--resume", default=None, help="재개 모델 경로")
+    parser.add_argument("--pos-weight", type=float, default=33.77, help="BCE pos_weight(불균형 보정)")
+    parser.add_argument("--pos-weight-final", type=float, default=10, help="pos_weight 선형 감소 최종값")
     # 진행 로그 및 평가.
-    parser.add_argument("--log-codes", action="store_true")
-    parser.add_argument("--log-every", type=int, default=50)
-    parser.add_argument("--eval-threshold", type=float, default=0.5)
+    parser.add_argument("--log-codes", action="store_true", help="코드별 로딩 로그 출력")
+    parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
+    parser.add_argument("--eval-threshold", type=float, default=0.5, help="평가용 확률 임계값")
     return parser.parse_args()
 
 
@@ -352,6 +387,9 @@ def main() -> None:
         std,
         args.log_codes,
         args.log_every,
+        args.max_drawdown,
+        args.min_trans_amnt_sum,
+        args.liquidity_days,
     )
     val_ds = WindowIterableDataset(
         args.table,
@@ -367,13 +405,16 @@ def main() -> None:
         std,
         args.log_codes,
         args.log_every,
+        args.max_drawdown,
+        args.min_trans_amnt_sum,
+        args.liquidity_days,
     )
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
 
-    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cpu")
     model = PriceLSTM(
         input_size=len(FEATURE_COLS),
         hidden_size=args.hidden_size,
@@ -392,6 +433,7 @@ def main() -> None:
         args.lr,
         args.model_out,
         args.pos_weight,
+        args.pos_weight_final,
         args.eval_threshold,
     )
 

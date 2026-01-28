@@ -259,6 +259,26 @@ python predict_jp.py --model model_jp.pt --seq-len 60 --as-of 2025-01-20 --top-k
 python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --top-k 20
 ```
 
+## 간단 백테스트 (예측 → 5/10일 성과)
+
+`backtest_simple.py`는 날짜별로 예측을 만든 뒤, 실제 5/10일 수익률과 승률을 간단히 확인합니다.
+
+```bash
+# JP 예시 (유동성 필터 포함)
+python backtest_simple.py --market jp --start-date 2023-01-01 --end-date 2025-12-31 \
+  --horizons 5,10 --date-step 5 --top-k 50 --min-trans-amnt-sum 1000000000 --liquidity-days 5
+
+# KR 예시 (JP 기준의 10배)
+python backtest_simple.py --market kr --start-date 2023-01-01 --end-date 2025-12-31 \
+  --horizons 5,10 --date-step 5 --top-k 50 --min-trans-amnt-sum 10000000000 --liquidity-days 5
+```
+
+출력 포맷:
+
+```
+as_of,count,avg_ret_5d,hit_5d,avg_ret_10d,hit_10d
+```
+
 특정 종목만 확인하려면 `--code`를 사용하세요.
 
 ```bash
