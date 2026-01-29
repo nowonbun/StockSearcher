@@ -4,5 +4,6 @@
 /entity/__pycache__
 /model_jp.pt
 /logs/
-model_kr.pt
-model_jp.pt
+/model_kr.pt
+/model_jp.pt
+backup/model_kr.pt
