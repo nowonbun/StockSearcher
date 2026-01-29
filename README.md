@@ -211,6 +211,12 @@ python model_jp.py --model-out d:\stock\StockSearcher\models\model_jp.pt
 python model_jp.py --pos-weight 3.0
 ```
 
+prec/rec 하락 시 pos-weight를 자동으로 조정하고 연속 하락이면 종료하려면:
+
+```bash
+python model_jp.py --adaptive-pos-weight --pos-weight-step 0.1 --drop-patience 3
+```
+
 기존 모델 이어서 학습하려면 `--resume`을 사용하세요.
 
 ```bash
@@ -226,6 +232,12 @@ python model_kr.py --seq-len 60 --horizon-days 5 --rise-threshold 0.10 --epochs 
 ```
 
 모델 출력 파일: 현재 작업 폴더에 `model_kr.pt`로 저장됩니다.
+
+prec/rec 하락 시 pos-weight를 자동으로 조정하고 연속 하락이면 종료하려면:
+
+```bash
+python model_kr.py --adaptive-pos-weight --pos-weight-step 0.1 --drop-patience 3
+```
 
 기존 모델 이어서 학습하려면 `--resume`을 사용하세요.
 

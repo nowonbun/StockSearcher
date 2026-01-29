@@ -1,5 +1,7 @@
 param(
     [string]$Table = "STOCK_DATA_KR",
+    [string]$StartDate = "",
+    [string]$EndDate = "",
     [double]$ValRatio = 0.2,
     [int]$SeqLen = 60,
     [int]$HorizonDays = 5,
@@ -13,8 +15,8 @@ import function.static as static
 from model_kr import load_codes, compute_feature_stats, get_cutoff_date, WindowIterableDataset
 
 table = "{TABLE}"
-start = static.start_date
-end = static.end_date
+start = "{START_DATE}" or static.start_date
+end = "{END_DATE}" or static.end_date
 val_ratio = {VAL_RATIO}
 seq_len = {SEQ_LEN}
 horizon = {HORIZON_DAYS}
@@ -40,6 +42,8 @@ for _, y in ds:
 
 print("pos:", pos, "neg:", neg, "pos_weight:", neg / max(pos, 1))
 '@.Replace("{TABLE}", $Table).
+    Replace("{START_DATE}", $StartDate).
+    Replace("{END_DATE}", $EndDate).
     Replace("{VAL_RATIO}", $ValRatio).
     Replace("{SEQ_LEN}", $SeqLen).
     Replace("{HORIZON_DAYS}", $HorizonDays).

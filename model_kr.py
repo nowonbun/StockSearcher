@@ -261,24 +261,29 @@ def train_loop(
     lr: float,
     model_out: str,
     pos_weight: float | None,
-    pos_weight_final: float | None,
     eval_threshold: float,
+    adaptive_pos_weight: bool,
+    pos_weight_step: float,
+    drop_patience: int,
 ) -> None:
     def build_criterion(weight: float | None) -> nn.Module:
         if weight is not None:
             return nn.BCEWithLogitsLoss(pos_weight=torch.tensor([weight], device=device))
         return nn.BCEWithLogitsLoss()
 
-    if pos_weight is not None and pos_weight_final is not None and epochs > 1:
-        weight_step = (pos_weight_final - pos_weight) / (epochs - 1)
-    else:
-        weight_step = 0.0
+    weight_step = 0.0
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     best_val = float("inf")
+    prev_prec: float | None = None
+    prev_rec: float | None = None
+    metric_eps = 1e-6
+    drop_streak = 0
+    weight_direction = -1.0
+    current_weight = pos_weight
     for epoch in range(1, epochs + 1):
-        if pos_weight is not None and pos_weight_final is not None:
-            current_weight = pos_weight + weight_step * (epoch - 1)
+        if adaptive_pos_weight:
+            current_weight = current_weight
         else:
             current_weight = pos_weight
         criterion = build_criterion(current_weight)
@@ -330,6 +335,26 @@ def train_loop(
             + (f" pw={current_weight:.4f}" if current_weight is not None else "")
         )
 
+        drop_any = (
+            prev_prec is not None
+            and prev_rec is not None
+            and (prec < prev_prec - metric_eps or rec < prev_rec - metric_eps)
+        )
+        prev_prec = prec
+        prev_rec = rec
+        if adaptive_pos_weight and drop_any:
+            print("prec/rec dropped: skip save this epoch")
+            drop_streak += 1
+            if current_weight is not None:
+                weight_direction *= -1.0
+                current_weight = current_weight * (1.0 + weight_direction * pos_weight_step)
+                print(f"adaptive pos_weight -> {current_weight:.4f}")
+            if drop_streak >= max(1, drop_patience):
+                print("drop streak reached: early stop")
+                break
+            continue
+        drop_streak = 0
+
         if val_loss < best_val:
             best_val = val_loss
             torch.save(model.state_dict(), model_out)
@@ -346,7 +371,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--horizon-days", type=int, default=5, help="라벨 기준 기간(일)")
     parser.add_argument("--rise-threshold", type=float, default=0.10, help="목표 상승률 (예: 0.10 = +10%)")
     parser.add_argument("--max-drawdown", type=float, default=0.03, help="기간 내 허용 최대 낙폭")
-    parser.add_argument("--min-trans-amnt-sum", type=float, default=2000000000 * 5, help="유동성 기간 내 TransAmnt 합 최소값")
+    parser.add_argument("--min-trans-amnt-sum", type=float, default=5000000000 * 5, help="유동성 기간 내 TransAmnt 합 최소값")
     parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 학습/검증 분리.
     parser.add_argument("--val-ratio", type=float, default=0.2, help="날짜 기준 검증 비율")
@@ -355,18 +380,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=20, help="학습 에폭 수")
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     # 모델 구조.
-    parser.add_argument("--hidden-size", type=int, default=128, help="LSTM 은닉 크기")
+    parser.add_argument("--hidden-size", type=int, default=512, help="LSTM 은닉 크기")
     parser.add_argument("--num-layers", type=int, default=2, help="LSTM 레이어 수")
-    parser.add_argument("--dropout", type=float, default=0.1, help="드롭아웃(레이어 2개 이상일 때만 적용)")
+    parser.add_argument("--dropout", type=float, default=0.3, help="드롭아웃(레이어 2개 이상일 때만 적용)")
     # 체크포인트 및 클래스 불균형.
     parser.add_argument("--model-out", default="model_kr.pt", help="모델 저장 경로")
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
-    parser.add_argument("--pos-weight", type=float, default=11.66, help="BCE pos_weight(불균형 보정)")
-    parser.add_argument("--pos-weight-final", type=float, default=5, help="pos_weight 선형 감소 최종값")
+    parser.add_argument("--pos-weight", type=float, default=17.6, help="BCE pos_weight(불균형 보정)")
+    parser.add_argument("--adaptive-pos-weight", action="store_true", help="prec/rec 하락 시 pos_weight 적응 조정")
+    parser.add_argument("--pos-weight-step", type=float, default=0.2, help="pos_weight 조정 비율 (예: 0.1 = 10%)")
+    parser.add_argument("--drop-patience", type=int, default=3, help="연속 하락 횟수로 조기 종료")
     # 진행 로그 및 평가.
     parser.add_argument("--log-codes", action="store_true", help="코드별 로딩 로그 출력")
     parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
-    parser.add_argument("--eval-threshold", type=float, default=0.5, help="평가용 확률 임계값")
+    parser.add_argument("--eval-threshold", type=float, default=0.60, help="평가용 확률 임계값")
     return parser.parse_args()
 
 
@@ -440,8 +467,10 @@ def main() -> None:
         args.lr,
         args.model_out,
         args.pos_weight,
-        args.pos_weight_final,
         args.eval_threshold,
+        args.adaptive_pos_weight,
+        args.pos_weight_step,
+        args.drop_patience,
     )
 
 

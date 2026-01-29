@@ -111,7 +111,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seq-len", type=int, default=60, help="시퀀스 길이(일)")
     parser.add_argument("--horizon-days", type=int, default=5, help="라벨 기준 기간(일)")
     parser.add_argument("--rise-threshold", type=float, default=0.10, help="목표 상승률 (예: 0.10 = +10%)")
-    parser.add_argument("--min-trans-amnt-sum", type=float, default=2000000000 * 5, help="유동성 기간 내 TransAmnt 합 최소값")
+    parser.add_argument("--min-trans-amnt-sum", type=float, default=5000000000 * 5, help="유동성 기간 내 TransAmnt 합 최소값")
     parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 추론 기준일/모델 선택.
     parser.add_argument("--as-of", default=str(date.today()), help="예측 기준일 (YYYY-MM-DD)")
