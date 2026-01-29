@@ -340,8 +340,6 @@ def train_loop(
             and prev_rec is not None
             and (prec < prev_prec - metric_eps or rec < prev_rec - metric_eps)
         )
-        prev_prec = prec
-        prev_rec = rec
         if adaptive_pos_weight and drop_any:
             print("prec/rec dropped: skip save this epoch")
             drop_streak += 1
@@ -353,6 +351,8 @@ def train_loop(
                 print("drop streak reached: early stop")
                 break
             continue
+        prev_prec = prec
+        prev_rec = rec
         drop_streak = 0
 
         if val_loss < best_val:
