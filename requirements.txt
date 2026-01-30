@@ -11,3 +11,4 @@ numpy<2
 xlrd>=2.0.1
 openpyxl
 flask
+flask-sock
