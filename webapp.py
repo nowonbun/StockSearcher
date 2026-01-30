@@ -323,12 +323,14 @@ def index() -> Response:
       }}
       .card-panel {{
         border-radius: 12px;
+        background: transparent;
+        box-shadow: none;
       }}
       .tabs {{
         display: flex;
         gap: 6px;
-        border-bottom: 1px solid #e0e0e0;
-        margin-bottom: 20px;
+        border-bottom: none;
+        margin-bottom: 12px;
       }}
       .tab-btn {{
         border: none;
@@ -359,18 +361,25 @@ def index() -> Response:
         gap: 12px;
       }}
       form {{
-        border: 1px solid #e0e0e0;
-        padding: 12px;
+        border: none;
+        padding: 0;
         border-radius: 10px;
-        background: #ffffff;
+        background: transparent;
+        box-shadow: none;
       }}
       button {{
         width: 100%;
         padding: 10px;
         font-size: 14px;
       }}
+      .action-btn {{
+        width: 100%;
+      }}
       .section {{
         margin-top: 24px;
+      }}
+      .batch-title {{
+        font-size: 12pt;
       }}
       ul {{
         padding-left: 18px;
@@ -380,7 +389,7 @@ def index() -> Response:
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 12px;
         align-items: end;
-        margin-bottom: 12px;
+        margin-bottom: 6px;
       }}
       .search-bar select {{
         height: 2.2rem;
@@ -390,20 +399,29 @@ def index() -> Response:
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 12px;
-        margin: 8px 0 16px;
+        margin: 4px 0 8px;
       }}
       .form-legend {{
         font-size: 12px;
         color: #666;
-        margin: 6px 0 2px;
+        margin: 2px 0;
         text-transform: uppercase;
         letter-spacing: 0.06em;
       }}
       .legend-wrap {{
         background: #e3f2fd;
-        padding: 8px 10px;
+        padding: 6px 8px;
         border-radius: 8px;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
+      }}
+      .input-field {{
+        margin: 0;
+      }}
+      .input-field input[type="number"] {{
+        margin: 0 0 4px 0;
+      }}
+      .input-field select {{
+        margin: 0 0 4px 0;
       }}
       .input-field input[type="number"] {{
         height: 2.2rem;
@@ -439,7 +457,7 @@ def index() -> Response:
   </head>
   <body>
     <div class="page">
-      <div class="card-panel white">
+      <div class="card-panel">
         <h4 style="margin-top:0">StockSearcher Control</h4>
         {msg_html}
         <div class="tabs">
@@ -449,7 +467,7 @@ def index() -> Response:
 
         <div class="tab-panel active" id="tab-batch">
           <div class="section">
-      <h2>JP</h2>
+      <h2 class="batch-title">JP</h2>
       <div class="grid">
         {action_form("dataset_jp", "Run dataset_jp.py")}
         {action_form("predict_jp", "Run predict_jp.py")}
@@ -458,7 +476,7 @@ def index() -> Response:
       </div>
 
           <div class="section">
-      <h2>KR</h2>
+      <h2 class="batch-title">KR</h2>
       <div class="grid">
         {action_form("dataset_kr", "Run dataset_kr.py")}
         {action_form("predict_kr", "Run predict_kr.py")}
@@ -467,14 +485,14 @@ def index() -> Response:
       </div>
 
           <div class="section">
-      <h2>Active/Recent Tasks</h2>
+      <h2 class="batch-title">Active/Recent Tasks</h2>
       <ul>
         {''.join(html_tasks) if html_tasks else '<li>None</li>'}
       </ul>
       </div>
 
           <div class="section">
-      <h2>Recent Logs</h2>
+      <h2 class="batch-title">Recent Logs</h2>
       <ul>
         {''.join(html_logs) if html_logs else '<li>No logs found</li>'}
       </ul>
@@ -756,16 +774,15 @@ def index() -> Response:
             columns: 1,
             pattern: "independent",
             roworder: "top to bottom",
-            rowheights: [0.91, 0.045, 0.045]
           }},
           height: 2160,
           margin: {{ t: 30, r: 20, b: 30, l: 50 }},
-          xaxis: {{ rangeslider: {{ visible: false }} }},
-          xaxis2: {{ matches: "x", showticklabels: false }},
-          xaxis3: {{ matches: "x" }},
-          yaxis: {{ title: "Price" }},
-          yaxis2: {{ title: "Volume" }},
-          yaxis3: {{ title: "DMI" }},
+          xaxis: {{ rangeslider: {{ visible: false }}, domain: [0, 1] }},
+          xaxis2: {{ matches: "x", showticklabels: false, domain: [0, 1] }},
+          xaxis3: {{ matches: "x", domain: [0, 1] }},
+          yaxis: {{ title: "Price", domain: [0.22, 1.0] }},
+          yaxis2: {{ title: "Volume", domain: [0.12, 0.19] }},
+          yaxis3: {{ title: "DMI", domain: [0.0, 0.08] }},
           legend: {{ orientation: "h" }},
         }};
         Plotly.newPlot(
@@ -800,7 +817,7 @@ def action_form(action: str, label: str) -> str:
     return f"""
 <form method="post" action="{url_for('run_task')}">
   <input type="hidden" name="task" value="{html.escape(action)}" />
-  <button type="submit">{html.escape(label)}</button>
+  <button type="submit" class="btn waves-effect waves-light green action-btn">{html.escape(label)}</button>
 </form>
 """
 
