@@ -410,12 +410,14 @@ def index() -> Response:
       }}
       .legend-wrap {{
         background: #e3f2fd;
-        padding: 6px 8px;
+        padding: 1px 8px;
         border-radius: 8px;
-        margin-bottom: 6px;
+        /* margin-bottom: 6px; */
       }}
       .input-field {{
         margin: 0 0 8px 0;
+        margin-left: 5px;
+        margin-right: 5px;
       }}
       .input-field input[type="number"] {{
         margin: 0 0 4px 0;
@@ -447,7 +449,13 @@ def index() -> Response:
       .filter-actions {{
         display: flex;
         gap: 8px;
-        align-items: center;
+        align-items: flex-end;
+        padding-bottom: 15px;
+      }}
+      .select-wrapper {{
+        position: relative;
+        margin-left: 5px;
+        margin-right: 5px;
       }}
       .action-btn:hover {{
         transform: translateY(-1px);
@@ -473,6 +481,7 @@ def index() -> Response:
         border-bottom: 1px solid #90caf9;
         font-size: 8px;
         height: 1.2rem;
+        background: white;
       }}
     </style>
   </head>
