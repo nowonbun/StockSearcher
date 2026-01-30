@@ -730,11 +730,12 @@ def index() -> Response:
             row.child(`<div class="chart-container"><div class="chart-canvas"></div></div>`).show();
             openedChildRow = row;
 
-            const childRow = row.child().to$();
-            let chartEl = childRow.find(".chart-canvas")[0];
+            const childRow = row.child(); // node
+            const child$ = $(childRow);
+            let chartEl = child$.find(".chart-canvas")[0];
             if (!chartEl) {{
-              childRow.html('<div class="chart-container"><div class="chart-canvas"></div></div>');
-              chartEl = childRow.find(".chart-canvas")[0];
+              child$.html('<div class="chart-container"><div class="chart-canvas"></div></div>');
+              chartEl = child$.find(".chart-canvas")[0];
             }}
 
             if (chartEl) {{
