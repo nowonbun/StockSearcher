@@ -480,6 +480,9 @@ def index() -> Response:
       #chart {{
         position: relative;
       }}
+      #chart .plot {{
+        position: relative;
+      }}
       #chart .hoverlayer {{
         display: none !important;
       }}
