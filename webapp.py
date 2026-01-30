@@ -737,10 +737,19 @@ def index() -> Response:
               chartEl = childRow.find(".chart-canvas")[0];
             }}
 
-            await loadChart(code, asof, chartEl);
             if (chartEl) {{
+              chartEl.style.height = "540px";
+              chartEl.style.width = "100%";
               chartEl.scrollIntoView({{ behavior: "smooth", block: "start" }});
             }}
+            const renderChart = async () => {{
+              if (!chartEl) return;
+              await loadChart(code, asof, chartEl);
+              if (chartEl) {{
+                Plotly.Plots.resize(chartEl);
+              }}
+            }};
+            requestAnimationFrame(() => requestAnimationFrame(renderChart));
           }});
         }} else {{
           table.clear();
