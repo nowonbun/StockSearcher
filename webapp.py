@@ -886,7 +886,8 @@ def index() -> Response:
             domain: [0.0, 0.08],
           }},
           hovermode: false,
-          showlegend: false,
+          showlegend: true,
+          legend: {{ orientation: "h" }},
         }};
         Plotly.newPlot(
           targetEl,
