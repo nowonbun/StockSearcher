@@ -730,7 +730,12 @@ def index() -> Response:
             row.child(`<div class="chart-container"><div class="chart-canvas"></div></div>`).show();
             openedChildRow = row;
 
-            const chartEl = row.child().to$().find(".chart-canvas")[0];
+            const childRow = row.child().to$();
+            let chartEl = childRow.find(".chart-canvas")[0];
+            if (!chartEl) {{
+              childRow.html('<div class="chart-container"><div class="chart-canvas"></div></div>');
+              chartEl = childRow.find(".chart-canvas")[0];
+            }}
 
             await loadChart(code, asof, chartEl);
             if (chartEl) {{
