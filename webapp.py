@@ -717,6 +717,7 @@ def index() -> Response:
             // Close previous child row if exists
             if (openedChildRow && openedChildRow !== row) {{
               openedChildRow.child.hide();
+              openedChildRow = null;
             }}
 
             // Toggle child row for current selection
@@ -726,11 +727,11 @@ def index() -> Response:
               return;
             }}
 
-            row.child(`<div id="chart-container"></div>`).show();
+            row.child(`<div class="chart-container"></div>`).show();
             openedChildRow = row;
 
             const chartEl = document.getElementById("chart");
-            const container = rowEl.next("tr").find("#chart-container")[0];
+            const container = rowEl.next("tr").find(".chart-container")[0];
             if (chartEl && container) {{
               container.appendChild(chartEl);
             }}
