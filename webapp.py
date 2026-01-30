@@ -799,8 +799,8 @@ def index() -> Response:
           name: "Price",
           xaxis: "x",
           yaxis: "y",
-          increasing: {{ line: {{ color: "#2e7d32" }}, fillcolor: "#2e7d32" }},
-          decreasing: {{ line: {{ color: "#c62828" }}, fillcolor: "#c62828" }},
+          increasing: {{ line: {{ color: "#c62828" }}, fillcolor: "#c62828" }},
+          decreasing: {{ line: {{ color: "#1e88e5" }}, fillcolor: "#1e88e5" }},
           hoverinfo: "skip",
           hovertemplate: "",
         }};
