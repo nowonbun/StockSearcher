@@ -662,26 +662,26 @@ def index() -> Response:
           xaxis: "x",
           yaxis: "y",
         }};
-        const maTrace = (key, name, color) => ({
+        const maTrace = (key, name, color) => ({{
           x: dates,
           y: series.map((d) => d[key]),
           type: "scatter",
           mode: "lines",
           name,
-          line: { color, width: 1 },
+          line: {{ color, width: 1 }},
           xaxis: "x",
           yaxis: "y",
-        });
-        const bbTrace = (key, name, color) => ({
+        }});
+        const bbTrace = (key, name, color) => ({{
           x: dates,
           y: series.map((d) => d[key]),
           type: "scatter",
           mode: "lines",
           name,
-          line: { color, width: 1, dash: "dot" },
+          line: {{ color, width: 1, dash: "dot" }},
           xaxis: "x",
           yaxis: "y",
-        });
+        }});
         const volumeTrace = {{
           x: dates,
           y: series.map((d) => d.volume),
@@ -689,18 +689,18 @@ def index() -> Response:
           name: "Volume",
           xaxis: "x2",
           yaxis: "y2",
-          marker: { color: "#90caf9" },
+          marker: {{ color: "#90caf9" }},
         }};
-        const dmiTrace = (key, name, color) => ({
+        const dmiTrace = (key, name, color) => ({{
           x: dates,
           y: series.map((d) => d[key]),
           type: "scatter",
           mode: "lines",
           name,
-          line: { color, width: 1 },
+          line: {{ color, width: 1 }},
           xaxis: "x3",
           yaxis: "y3",
-        });
+        }});
         const layout = {{
           grid: {{ rows: 3, columns: 1, pattern: "independent", roworder: "top to bottom" }},
           height: 720,
@@ -731,7 +731,7 @@ def index() -> Response:
             dmiTrace("adx", "ADX", "#5c6bc0"),
           ],
           layout,
-          { responsive: true }
+          {{ responsive: true }}
         );
       }}
     </script>
