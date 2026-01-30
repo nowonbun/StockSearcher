@@ -812,9 +812,17 @@ def index() -> Response:
           xaxis: {{ rangeslider: {{ visible: false }}, domain: [0, 1] }},
           xaxis2: {{ matches: "x", showticklabels: false, domain: [0, 1] }},
           xaxis3: {{ matches: "x", domain: [0, 1] }},
-          yaxis: {{ title: "Price", domain: [0.22, 1.0] }},
+          yaxis: {{
+            title: "Price",
+            domain: [0.22, 1.0],
+            showspikes: true,
+            spikemode: "across",
+            spikecolor: "#90a4ae",
+            spikethickness: 1
+          }},
           yaxis2: {{ title: "Volume", domain: [0.12, 0.19] }},
           yaxis3: {{ title: "DMI", domain: [0.0, 0.08] }},
+          hovermode: "closest",
           legend: {{ orientation: "h" }},
         }};
         Plotly.newPlot(
