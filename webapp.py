@@ -330,7 +330,7 @@ def index() -> Response:
         display: flex;
         gap: 6px;
         border-bottom: none;
-        margin-bottom: 12px;
+        margin-bottom: 0;
       }}
       .tab-btn {{
         border: none;
@@ -419,9 +419,23 @@ def index() -> Response:
       }}
       .input-field input[type="number"] {{
         margin: 0 0 4px 0;
+        background: #fff;
+        padding: 0 6px;
+        border-radius: 4px;
       }}
       .input-field select {{
         margin: 0 0 4px 0;
+      }}
+      .input-field input[type="text"] {{
+        background: #fff;
+        padding: 0 6px;
+        border-radius: 4px;
+      }}
+      .input-field .select-wrapper input.select-dropdown {{
+        background: #fff;
+        padding: 0 6px;
+        border-radius: 4px;
+        height: 2.2rem;
       }}
       .input-field input[type="number"] {{
         height: 2.2rem;
@@ -435,6 +449,10 @@ def index() -> Response:
         gap: 8px;
         align-items: center;
       }}
+      .action-btn:hover {{
+        transform: translateY(-1px);
+        box-shadow: 0 3px 8px rgba(0,0,0,0.18);
+      }}
       table.dataTable tbody tr td {{
         vertical-align: middle;
       }}
@@ -447,6 +465,9 @@ def index() -> Response:
       }}
       #predict-table tbody tr.selected {{
         background: #e8f5e9;
+      }}
+      #predict-table {{
+        background: #fff;
       }}
       .dataTables_wrapper .dataTables_filter input {{
         border-bottom: 1px solid #90caf9;
@@ -563,7 +584,7 @@ def index() -> Response:
         </table>
         <div class="section">
           <h5>Chart</h5>
-          <div id="chart" style="height: 2160px;"></div>
+          <div id="chart" style="height: 1080px;"></div>
         </div>
       </div>
         </div>
@@ -775,7 +796,7 @@ def index() -> Response:
             pattern: "independent",
             roworder: "top to bottom",
           }},
-          height: 2160,
+          height: 1080,
           margin: {{ t: 30, r: 20, b: 30, l: 50 }},
           xaxis: {{ rangeslider: {{ visible: false }}, domain: [0, 1] }},
           xaxis2: {{ matches: "x", showticklabels: false, domain: [0, 1] }},
