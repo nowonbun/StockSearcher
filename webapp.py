@@ -480,6 +480,9 @@ def index() -> Response:
       #chart {{
         position: relative;
       }}
+      #chart .hoverlayer {{
+        display: none !important;
+      }}
       .crosshair-line {{
         position: absolute;
         background: rgba(120, 144, 156, 0.8);
