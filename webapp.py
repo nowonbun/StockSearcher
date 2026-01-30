@@ -900,7 +900,7 @@ def index() -> Response:
             maTrace("ma240", "MA240", "#6d4c41"),
             bbTrace("bb_upper", "BB Upper", "#ef5350"),
             bbTrace("bb_lower", "BB Lower", "#ef5350"),
-            bbTrace("bb_lower3", "BB Lower3", "#c62828"),
+            bbTrace("bb_lower3", "BB Lower3", "#8d6e63"),
             volumeTrace,
             dmiTrace("di_plus", "DI+", "#26a69a"),
             dmiTrace("di_minus", "DI-", "#ef5350"),
