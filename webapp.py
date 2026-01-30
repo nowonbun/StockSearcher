@@ -85,6 +85,10 @@ def _run_task(name: str, cmd: str, log_path: Path) -> None:
 
 
 def _start_task(name: str, cmd: str) -> TaskState:
+    with TASK_LOCK:
+        existing = TASKS.get(name)
+        if existing and existing.finished_at is None:
+            raise RuntimeError(f"task '{name}' is already running")
     log_dir = _log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     log_name = f"manual-{name}-{_now_stamp()}.log"
@@ -117,6 +121,7 @@ app = Flask(__name__)
 
 @app.get("/")
 def index() -> Response:
+    message = request.args.get("msg")
     tasks = []
     with TASK_LOCK:
         for state in TASKS.values():
@@ -138,6 +143,7 @@ def index() -> Response:
             f"<span style='color:#666'>({ts})</span></li>"
         )
 
+    msg_html = f"<p style='color:#b00020'>{html.escape(message)}</p>" if message else ""
     body = f"""
 <!doctype html>
 <html>
@@ -175,6 +181,7 @@ def index() -> Response:
   </head>
   <body>
     <h1>StockSearcher Control</h1>
+    {msg_html}
     <div class="section">
       <h2>JP</h2>
       <div class="grid">
@@ -227,7 +234,10 @@ def run_task() -> Response:
     cmds = _job_cmds()
     if task not in cmds:
         return Response("unknown task", status=400)
-    state = _start_task(task, cmds[task])
+    try:
+        state = _start_task(task, cmds[task])
+    except RuntimeError as exc:
+        return redirect(url_for("index", msg=str(exc)))
     return redirect(url_for("view_log", name=state.log_name))
 
 
@@ -243,6 +253,7 @@ def view_log(name: str) -> Response:
   <head>
     <meta charset="utf-8" />
     <title>{html.escape(name)}</title>
+    <meta http-equiv="refresh" content="3" />
     <style>
       body {{ font-family: Arial, sans-serif; margin: 24px; }}
       pre {{ background: #111; color: #f5f5f5; padding: 12px; overflow-x: auto; }}
@@ -251,6 +262,7 @@ def view_log(name: str) -> Response:
   </head>
   <body>
     <a href="{url_for('index')}">Back</a>
+    <span style="color:#666; margin-left: 8px;">Auto-refresh every 3s</span>
     <h2>{html.escape(name)}</h2>
     <pre>{html.escape(content)}</pre>
   </body>
