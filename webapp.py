@@ -731,7 +731,7 @@ def index() -> Response:
             openedChildRow = row;
 
             const chartEl = document.getElementById("chart");
-            const container = rowEl.next("tr").find(".chart-container")[0];
+            const container = row.child().to$().find(".chart-container")[0];
             if (chartEl && container) {{
               container.appendChild(chartEl);
             }}
