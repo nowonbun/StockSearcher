@@ -547,8 +547,8 @@ def index() -> Response:
           <div class="search-bar">
           <div class="input-field">
             <select id="market">
+              <option value="JP" selected>JP</option>
               <option value="KR">KR</option>
-              <option value="JP">JP</option>
             </select>
             <label>Market</label>
           </div>
