@@ -477,7 +477,11 @@ def index() -> Response:
       #predict-table {{
         background: #fff;
       }}
-      #chart .hoverlayer {{
+      .chart-canvas {{
+        width: 100%;
+        height: 540px;
+      }}
+      .chart-canvas .hoverlayer {{
         display: none !important;
       }}
       #chart-container {{
@@ -597,10 +601,6 @@ def index() -> Response:
           </thead>
           <tbody></tbody>
         </table>
-        <div class="section" id="chart-section">
-          <h5>Chart</h5>
-          <div id="chart" style="height: 540px;"></div>
-        </div>
       </div>
         </div>
       </div>
@@ -727,18 +727,14 @@ def index() -> Response:
               return;
             }}
 
-            row.child(`<div class="chart-container"></div>`).show();
+            row.child(`<div class="chart-container"><div class="chart-canvas"></div></div>`).show();
             openedChildRow = row;
 
-            const chartEl = document.getElementById("chart");
-            const container = row.child().to$().find(".chart-container")[0];
-            if (chartEl && container) {{
-              container.appendChild(chartEl);
-            }}
+            const chartEl = row.child().to$().find(".chart-canvas")[0];
 
-            await loadChart(code, asof);
-            if (container) {{
-              container.scrollIntoView({{ behavior: "smooth", block: "start" }});
+            await loadChart(code, asof, chartEl);
+            if (chartEl) {{
+              chartEl.scrollIntoView({{ behavior: "smooth", block: "start" }});
             }}
           }});
         }} else {{
@@ -768,13 +764,13 @@ def index() -> Response:
 
       loadDates(true);
 
-      async function loadChart(code, asof) {{
+      async function loadChart(code, asof, targetEl) {{
         const market = document.getElementById("market").value;
         const res = await fetch(`/api/series?market=${{encodeURIComponent(market)}}&code=${{encodeURIComponent(code)}}&as_of=${{encodeURIComponent(asof)}}`);
         const data = await res.json();
         const series = data.series;
-        if (!series || !series.length) {{
-          Plotly.purge("chart");
+        if (!series || !series.length || !targetEl) {{
+          if (targetEl) Plotly.purge(targetEl);
           return;
         }}
         const dates = series.map((d) => d.date);
@@ -878,7 +874,7 @@ def index() -> Response:
           showlegend: false,
         }};
         Plotly.newPlot(
-          "chart",
+          targetEl,
           [
             traceCandle,
             maTrace("ma5", "MA5", "#1e88e5"),
@@ -897,9 +893,6 @@ def index() -> Response:
           layout,
           {{ responsive: true, displayModeBar: false }}
         );
-
-        const chartEl = document.getElementById("chart");
-        if (!chartEl) return;
       }}
     </script>
   </body>
