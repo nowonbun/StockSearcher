@@ -415,7 +415,7 @@ def index() -> Response:
         margin-bottom: 6px;
       }}
       .input-field {{
-        margin: 0;
+        margin: 0 0 8px 0;
       }}
       .input-field input[type="number"] {{
         margin: 0 0 4px 0;
