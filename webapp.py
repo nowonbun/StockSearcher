@@ -477,6 +477,25 @@ def index() -> Response:
       #predict-table {{
         background: #fff;
       }}
+      #chart {{
+        position: relative;
+      }}
+      .crosshair-line {{
+        position: absolute;
+        background: rgba(120, 144, 156, 0.8);
+        pointer-events: none;
+        z-index: 10;
+      }}
+      .crosshair-x {{
+        height: 1px;
+        left: 0;
+        right: 0;
+      }}
+      .crosshair-y {{
+        width: 1px;
+        top: 0;
+        bottom: 0;
+      }}
       .dataTables_wrapper .dataTables_filter input {{
         border-bottom: 1px solid #90caf9;
         font-size: 8px;
@@ -760,6 +779,7 @@ def index() -> Response:
           yaxis: "y",
           increasing: {{ line: {{ color: "#2e7d32" }}, fillcolor: "#2e7d32" }},
           decreasing: {{ line: {{ color: "#c62828" }}, fillcolor: "#c62828" }},
+          hoverinfo: "skip",
         }};
         const maTrace = (key, name, color) => ({{
           x: dates,
@@ -770,6 +790,7 @@ def index() -> Response:
           line: {{ color, width: 1 }},
           xaxis: "x",
           yaxis: "y",
+          hoverinfo: "skip",
         }});
         const bbTrace = (key, name, color) => ({{
           x: dates,
@@ -780,6 +801,7 @@ def index() -> Response:
           line: {{ color, width: 1, dash: "dot" }},
           xaxis: "x",
           yaxis: "y",
+          hoverinfo: "skip",
         }});
         const volumeTrace = {{
           x: dates,
@@ -789,6 +811,7 @@ def index() -> Response:
           xaxis: "x2",
           yaxis: "y2",
           marker: {{ color: "#90caf9" }},
+          hoverinfo: "skip",
         }};
         const dmiTrace = (key, name, color) => ({{
           x: dates,
@@ -799,6 +822,7 @@ def index() -> Response:
           line: {{ color, width: 1 }},
           xaxis: "x3",
           yaxis: "y3",
+          hoverinfo: "skip",
         }});
         const layout = {{
           grid: {{
@@ -812,55 +836,29 @@ def index() -> Response:
           xaxis: {{
             rangeslider: {{ visible: false }},
             domain: [0, 1],
-            showspikes: true,
-            spikemode: "across",
-            spikecolor: "#90a4ae",
-            spikethickness: 1
           }},
           xaxis2: {{
             matches: "x",
             showticklabels: false,
             domain: [0, 1],
-            showspikes: true,
-            spikemode: "across",
-            spikecolor: "#90a4ae",
-            spikethickness: 1
           }},
           xaxis3: {{
             matches: "x",
             domain: [0, 1],
-            showspikes: true,
-            spikemode: "across",
-            spikecolor: "#90a4ae",
-            spikethickness: 1
           }},
           yaxis: {{
             title: "Price",
             domain: [0.22, 1.0],
-            showspikes: true,
-            spikemode: "across",
-            spikecolor: "#90a4ae",
-            spikethickness: 1
           }},
           yaxis2: {{
             title: "Volume",
             domain: [0.12, 0.19],
-            showspikes: true,
-            spikemode: "across",
-            spikecolor: "#90a4ae",
-            spikethickness: 1
           }},
           yaxis3: {{
             title: "DMI",
             domain: [0.0, 0.08],
-            showspikes: true,
-            spikemode: "across",
-            spikecolor: "#90a4ae",
-            spikethickness: 1
           }},
-          hovermode: "x",
-          hoverdistance: -1,
-          spikedistance: -1,
+          hovermode: false,
           showlegend: false,
         }};
         Plotly.newPlot(
@@ -883,6 +881,44 @@ def index() -> Response:
           layout,
           {{ responsive: true, displayModeBar: false }}
         );
+
+        const chartEl = document.getElementById("chart");
+        if (!chartEl) return;
+        let crossX = chartEl.querySelector(".crosshair-x");
+        let crossY = chartEl.querySelector(".crosshair-y");
+        if (!crossX) {{
+          crossX = document.createElement("div");
+          crossX.className = "crosshair-line crosshair-x";
+          chartEl.appendChild(crossX);
+        }}
+        if (!crossY) {{
+          crossY = document.createElement("div");
+          crossY.className = "crosshair-line crosshair-y";
+          chartEl.appendChild(crossY);
+        }}
+        const plotArea = chartEl.querySelector(".plot");
+        if (!plotArea) return;
+
+        chartEl.onmousemove = (evt) => {{
+          const rect = plotArea.getBoundingClientRect();
+          const x = evt.clientX - rect.left;
+          const y = evt.clientY - rect.top;
+          if (x < 0 || y < 0 || x > rect.width || y > rect.height) {{
+            crossX.style.display = "none";
+            crossY.style.display = "none";
+            return;
+          }}
+          crossX.style.display = "block";
+          crossY.style.display = "block";
+          crossX.style.transform = `translateY(${{y}}px)`;
+          crossY.style.transform = `translateX(${{x}}px)`;
+          crossX.style.width = `${{rect.width}}px`;
+          crossY.style.height = `${{rect.height}}px`;
+        }};
+        chartEl.onmouseleave = () => {{
+          crossX.style.display = "none";
+          crossY.style.display = "none";
+        }};
       }}
     </script>
   </body>
