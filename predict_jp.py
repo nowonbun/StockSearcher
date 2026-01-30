@@ -116,7 +116,7 @@ def parse_args() -> argparse.Namespace:
     # 추론 기준일/모델 선택.
     parser.add_argument("--as-of", default=str(date.today()), help="예측 기준일 (YYYY-MM-DD)")
     parser.add_argument("--model", default="model_jp.pt", help="모델 경로")
-    parser.add_argument("--hidden-size", type=int, default=128, help="LSTM 은닉 크기(학습과 동일)")
+    parser.add_argument("--hidden-size", type=int, default=512, help="LSTM 은닉 크기(학습과 동일)")
     parser.add_argument("--num-layers", type=int, default=2, help="LSTM 레이어 수(학습과 동일)")
     parser.add_argument("--dropout", type=float, default=0.1, help="드롭아웃(학습과 동일)")
     # 출력 필터링 및 로그.

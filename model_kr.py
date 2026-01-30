@@ -388,7 +388,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
     parser.add_argument("--pos-weight", type=float, default=17.6, help="BCE pos_weight(불균형 보정)")
     parser.add_argument("--adaptive-pos-weight", action="store_true", help="prec/rec 하락 시 pos_weight 적응 조정")
-    parser.add_argument("--pos-weight-step", type=float, default=0.05, help="pos_weight 조정 비율 (예: 0.1 = 10%)")
+    parser.add_argument("--pos-weight-step", type=float, default=0.01, help="pos_weight 조정 비율 (예: 0.1 = 10%)")
     parser.add_argument("--drop-patience", type=int, default=3, help="연속 하락 횟수로 조기 종료")
     # 진행 로그 및 평가.
     parser.add_argument("--log-codes", action="store_true", help="코드별 로딩 로그 출력")
