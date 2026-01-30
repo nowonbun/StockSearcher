@@ -859,7 +859,9 @@ def index() -> Response:
             spikethickness: 1
           }},
           hovermode: "x",
-          legend: {{ orientation: "h" }},
+          hoverdistance: -1,
+          spikedistance: -1,
+          showlegend: false,
         }};
         Plotly.newPlot(
           "chart",
