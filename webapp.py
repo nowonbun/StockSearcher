@@ -477,30 +477,11 @@ def index() -> Response:
       #predict-table {{
         background: #fff;
       }}
-      #chart {{
-        position: relative;
-      }}
-      #chart .plot {{
-        position: relative;
-      }}
       #chart .hoverlayer {{
         display: none !important;
       }}
-      .crosshair-line {{
-        position: absolute;
-        background: rgba(120, 144, 156, 0.8);
-        pointer-events: none;
-        z-index: 10;
-      }}
-      .crosshair-x {{
-        height: 1px;
-        left: 0;
-        right: 0;
-      }}
-      .crosshair-y {{
-        width: 1px;
-        top: 0;
-        bottom: 0;
+      #chart-container {{
+        width: 100%;
       }}
       .dataTables_wrapper .dataTables_filter input {{
         border-bottom: 1px solid #90caf9;
@@ -616,7 +597,7 @@ def index() -> Response:
           </thead>
           <tbody></tbody>
         </table>
-        <div class="section">
+        <div class="section" id="chart-section">
           <h5>Chart</h5>
           <div id="chart" style="height: 540px;"></div>
         </div>
@@ -722,18 +703,41 @@ def index() -> Response:
             pageLength: 50,
             order: [[3, "desc"]],
           }});
+          let openedChildRow = null;
           $("#predict-table tbody").on("click", "td:nth-child(2)", async function () {{
             const rowEl = $(this).closest("tr");
             $("#predict-table tbody tr").removeClass("selected");
             rowEl.addClass("selected");
-            const row = table.row(rowEl).data();
-            if (!row) return;
-            const code = row[1];
-            const asof = row[0];
-            await loadChart(code, asof);
+            const row = table.row(rowEl);
+            const rowData = row.data();
+            if (!rowData) return;
+            const code = rowData[1];
+            const asof = rowData[0];
+
+            // Close previous child row if exists
+            if (openedChildRow && openedChildRow !== row) {{
+              openedChildRow.child.hide();
+            }}
+
+            // Toggle child row for current selection
+            if (row.child.isShown()) {{
+              row.child.hide();
+              openedChildRow = null;
+              return;
+            }}
+
+            row.child(`<div id="chart-container"></div>`).show();
+            openedChildRow = row;
+
             const chartEl = document.getElementById("chart");
-            if (chartEl) {{
-              chartEl.scrollIntoView({{ behavior: "smooth", block: "start" }});
+            const container = rowEl.next("tr").find("#chart-container")[0];
+            if (chartEl && container) {{
+              container.appendChild(chartEl);
+            }}
+
+            await loadChart(code, asof);
+            if (container) {{
+              container.scrollIntoView({{ behavior: "smooth", block: "start" }});
             }}
           }});
         }} else {{
@@ -895,41 +899,6 @@ def index() -> Response:
 
         const chartEl = document.getElementById("chart");
         if (!chartEl) return;
-        const plotArea = chartEl.querySelector(".plot");
-        if (!plotArea) return;
-        let crossX = plotArea.querySelector(".crosshair-x");
-        let crossY = plotArea.querySelector(".crosshair-y");
-        if (!crossX) {{
-          crossX = document.createElement("div");
-          crossX.className = "crosshair-line crosshair-x";
-          plotArea.appendChild(crossX);
-        }}
-        if (!crossY) {{
-          crossY = document.createElement("div");
-          crossY.className = "crosshair-line crosshair-y";
-          plotArea.appendChild(crossY);
-        }}
-
-        plotArea.onmousemove = (evt) => {{
-          const rect = plotArea.getBoundingClientRect();
-          const x = evt.clientX - rect.left;
-          const y = evt.clientY - rect.top;
-          if (x < 0 || y < 0 || x > rect.width || y > rect.height) {{
-            crossX.style.display = "none";
-            crossY.style.display = "none";
-            return;
-          }}
-          crossX.style.display = "block";
-          crossY.style.display = "block";
-          crossX.style.transform = `translateY(${{y}}px)`;
-          crossY.style.transform = `translateX(${{x}}px)`;
-          crossX.style.width = `${{rect.width}}px`;
-          crossY.style.height = `${{rect.height}}px`;
-        }};
-        plotArea.onmouseleave = () => {{
-          crossX.style.display = "none";
-          crossY.style.display = "none";
-        }};
       }}
     </script>
   </body>
