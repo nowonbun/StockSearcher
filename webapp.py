@@ -780,6 +780,7 @@ def index() -> Response:
           increasing: {{ line: {{ color: "#2e7d32" }}, fillcolor: "#2e7d32" }},
           decreasing: {{ line: {{ color: "#c62828" }}, fillcolor: "#c62828" }},
           hoverinfo: "skip",
+          hovertemplate: "",
         }};
         const maTrace = (key, name, color) => ({{
           x: dates,
@@ -791,6 +792,7 @@ def index() -> Response:
           xaxis: "x",
           yaxis: "y",
           hoverinfo: "skip",
+          hovertemplate: "",
         }});
         const bbTrace = (key, name, color) => ({{
           x: dates,
@@ -802,6 +804,7 @@ def index() -> Response:
           xaxis: "x",
           yaxis: "y",
           hoverinfo: "skip",
+          hovertemplate: "",
         }});
         const volumeTrace = {{
           x: dates,
@@ -812,6 +815,7 @@ def index() -> Response:
           yaxis: "y2",
           marker: {{ color: "#90caf9" }},
           hoverinfo: "skip",
+          hovertemplate: "",
         }};
         const dmiTrace = (key, name, color) => ({{
           x: dates,
@@ -823,6 +827,7 @@ def index() -> Response:
           xaxis: "x3",
           yaxis: "y3",
           hoverinfo: "skip",
+          hovertemplate: "",
         }});
         const layout = {{
           grid: {{
