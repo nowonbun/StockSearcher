@@ -317,7 +317,7 @@ def index() -> Response:
         background: #f5f7fb;
       }}
       .page {{
-        max-width: 1200px;
+        max-width: 1680px;
         margin: 32px auto;
         padding: 0 16px;
       }}
@@ -339,9 +339,10 @@ def index() -> Response:
         font-weight: 500;
       }}
       .tab-btn.active {{
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-bottom: 1px solid #ffffff;
+        background: #e8f5e9;
+        color: #1b5e20;
+        border: 1px solid #c8e6c9;
+        border-bottom: 1px solid #e8f5e9;
       }}
       .tab-panel {{
         display: none;
@@ -359,7 +360,6 @@ def index() -> Response:
         padding: 12px;
         border-radius: 10px;
         background: #ffffff;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
       }}
       button {{
         width: 100%;
@@ -380,13 +380,28 @@ def index() -> Response:
         margin-bottom: 12px;
       }}
       .search-bar select {{
-        height: 2.6rem;
+        height: 2.2rem;
+        font-size: 13px;
       }}
       .filter-bar {{
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 12px;
         margin: 8px 0 16px;
+      }}
+      .form-legend {{
+        font-size: 12px;
+        color: #666;
+        margin: 6px 0 2px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }}
+      .input-field input[type="number"] {{
+        height: 2.2rem;
+        font-size: 13px;
+      }}
+      .input-field label {{
+        font-size: 12px;
       }}
       .filter-actions {{
         display: flex;
@@ -395,6 +410,12 @@ def index() -> Response:
       }}
       table.dataTable tbody tr td {{
         vertical-align: middle;
+      }}
+      #predict-table tbody tr {{
+        cursor: pointer;
+      }}
+      #predict-table tbody tr.selected {{
+        background: #e8f5e9;
       }}
       .dataTables_wrapper .dataTables_filter input {{
         border-bottom: 1px solid #90caf9;
@@ -448,6 +469,7 @@ def index() -> Response:
         <div class="tab-panel" id="tab-search">
           <div class="section">
         <h2>Predict Search</h2>
+        <div class="form-legend">Search</div>
         <div class="search-bar">
           <div class="input-field">
             <select id="market">
@@ -464,6 +486,7 @@ def index() -> Response:
             <a class="btn waves-effect waves-light blue" id="search-btn">Search</a>
           </div>
         </div>
+        <div class="form-legend">Filters (Open / Close)</div>
         <div class="filter-bar">
           <div class="input-field">
             <input id="open-min" type="number" step="0.0001">
@@ -503,7 +526,7 @@ def index() -> Response:
         </table>
         <div class="section">
           <h5>Chart</h5>
-          <div id="chart" style="height: 720px;"></div>
+          <div id="chart" style="height: 2160px;"></div>
         </div>
       </div>
         </div>
@@ -607,12 +630,19 @@ def index() -> Response:
             pageLength: 50,
             order: [[3, "desc"]],
           }});
-          $("#predict-table tbody").on("click", "tr", async function () {{
-            const row = table.row(this).data();
+          $("#predict-table tbody").on("click", "td:nth-child(2)", async function () {{
+            const rowEl = $(this).closest("tr");
+            $("#predict-table tbody tr").removeClass("selected");
+            rowEl.addClass("selected");
+            const row = table.row(rowEl).data();
             if (!row) return;
             const code = row[1];
             const asof = row[0];
             await loadChart(code, asof);
+            const chartEl = document.getElementById("chart");
+            if (chartEl) {{
+              chartEl.scrollIntoView({{ behavior: "smooth", block: "start" }});
+            }}
           }});
         }} else {{
           table.clear();
@@ -702,8 +732,14 @@ def index() -> Response:
           yaxis: "y3",
         }});
         const layout = {{
-          grid: {{ rows: 3, columns: 1, pattern: "independent", roworder: "top to bottom" }},
-          height: 720,
+          grid: {{
+            rows: 3,
+            columns: 1,
+            pattern: "independent",
+            roworder: "top to bottom",
+            rowheights: [0.7, 0.15, 0.15]
+          }},
+          height: 2160,
           margin: {{ t: 30, r: 20, b: 30, l: 50 }},
           xaxis: {{ rangeslider: {{ visible: false }} }},
           xaxis2: {{ matches: "x", showticklabels: false }},
