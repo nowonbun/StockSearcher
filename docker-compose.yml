@@ -4,6 +4,7 @@ services:
     environment:
       TZ: Asia/Seoul
       OUTPUT_DIR: "/data"
+      WEB_PORT: "9999"
       CRON_SCHEDULE_JP: "0 18 * * *"
       CRON_SCHEDULE_KR: "0 20 * * *"
       JOB_CMD_JP: "python dataset_jp.py && python predict_jp.py --model /models/model_jp.pt --save-db"
@@ -15,4 +16,6 @@ services:
       - ./config.ini:/app/config.ini:ro
       - /root/stock/models:/models:ro
       - /root/stock/data:/data
+    ports:
+      - "9999:9999"
     restart: unless-stopped

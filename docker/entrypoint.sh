@@ -30,4 +30,9 @@ echo "cron command jp: ${JOB_CMD_JP}"
 echo "cron schedule kr: ${CRON_SCHEDULE_KR}"
 echo "cron command kr: ${JOB_CMD_KR}"
 
-cron -f
+cron
+
+WEB_HOST="${WEB_HOST:-0.0.0.0}"
+WEB_PORT="${WEB_PORT:-9999}"
+echo "web ui: http://${WEB_HOST}:${WEB_PORT}"
+exec python webapp.py

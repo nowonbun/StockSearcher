@@ -10,3 +10,4 @@ torch==2.2.2
 numpy<2
 xlrd>=2.0.1
 openpyxl
+flask
