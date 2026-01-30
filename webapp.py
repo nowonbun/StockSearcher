@@ -895,22 +895,22 @@ def index() -> Response:
 
         const chartEl = document.getElementById("chart");
         if (!chartEl) return;
-        let crossX = chartEl.querySelector(".crosshair-x");
-        let crossY = chartEl.querySelector(".crosshair-y");
+        const plotArea = chartEl.querySelector(".plot");
+        if (!plotArea) return;
+        let crossX = plotArea.querySelector(".crosshair-x");
+        let crossY = plotArea.querySelector(".crosshair-y");
         if (!crossX) {{
           crossX = document.createElement("div");
           crossX.className = "crosshair-line crosshair-x";
-          chartEl.appendChild(crossX);
+          plotArea.appendChild(crossX);
         }}
         if (!crossY) {{
           crossY = document.createElement("div");
           crossY.className = "crosshair-line crosshair-y";
-          chartEl.appendChild(crossY);
+          plotArea.appendChild(crossY);
         }}
-        const plotArea = chartEl.querySelector(".plot");
-        if (!plotArea) return;
 
-        chartEl.onmousemove = (evt) => {{
+        plotArea.onmousemove = (evt) => {{
           const rect = plotArea.getBoundingClientRect();
           const x = evt.clientX - rect.left;
           const y = evt.clientY - rect.top;
@@ -926,7 +926,7 @@ def index() -> Response:
           crossX.style.width = `${{rect.width}}px`;
           crossY.style.height = `${{rect.height}}px`;
         }};
-        chartEl.onmouseleave = () => {{
+        plotArea.onmouseleave = () => {{
           crossX.style.display = "none";
           crossY.style.display = "none";
         }};
