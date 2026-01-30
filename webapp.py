@@ -138,6 +138,10 @@ def _data_table(market: str) -> str:
     return "STOCK_DATA_JP" if market == "JP" else "STOCK_DATA_KR"
 
 
+def _list_table(market: str) -> str:
+    return "STOCK_LIST_JP" if market == "JP" else "STOCK_LIST_KR"
+
+
 def _fetch_predict_dates(market: str, limit: int = 120) -> List[str]:
     table = _predict_table(market)
     conn = mysql.connector.connect(**_db_config(market))
@@ -155,6 +159,7 @@ def _fetch_predict_dates(market: str, limit: int = 120) -> List[str]:
 def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
     predict_table = _predict_table(market)
     data_table = _data_table(market)
+    list_table = _list_table(market)
     conn = mysql.connector.connect(**_db_config(market))
     try:
         with conn.cursor() as cur:
@@ -163,6 +168,7 @@ def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
                 SELECT
                   p.as_of,
                   p.code,
+                  l.name,
                   p.probability,
                   d.Open,
                   d.Close,
@@ -170,6 +176,8 @@ def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
                   d.High,
                   d.Volume
                 FROM {predict_table} p
+                JOIN {list_table} l
+                  ON l.code = p.code
                 JOIN {data_table} d
                   ON d.code = p.code AND d.date = p.as_of
                 WHERE p.as_of = %s
@@ -183,12 +191,13 @@ def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
                     {
                         "as_of": row[0].strftime("%Y-%m-%d"),
                         "code": row[1],
-                        "probability": row[2],
-                        "open": row[3],
-                        "close": row[4],
-                        "low": row[5],
-                        "high": row[6],
-                        "volume": row[7],
+                        "name": row[2],
+                        "probability": row[3],
+                        "open": row[4],
+                        "close": row[5],
+                        "low": row[6],
+                        "high": row[7],
+                        "volume": row[8],
                     }
                 )
             return rows
@@ -200,6 +209,68 @@ def _json_default(obj: object):
     if isinstance(obj, Decimal):
         return float(obj)
     return str(obj)
+
+
+def _fetch_series(market: str, code: str, as_of: str, limit: int = 240) -> List[Dict[str, object]]:
+    data_table = _data_table(market)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT
+                  date,
+                  Open,
+                  High,
+                  Low,
+                  Close,
+                  Volume,
+                  `5MvAvg`,
+                  `20MvAvg`,
+                  `60MvAvg`,
+                  `120MvAvg`,
+                  `240MvAvg`,
+                  UpperBand60_1,
+                  LowerBand60_1,
+                  LowerBand60_3,
+                  DI_plus,
+                  DI_minus,
+                  ADX
+                FROM {data_table}
+                WHERE code = %s AND date <= %s
+                ORDER BY date DESC
+                LIMIT %s
+                """,
+                (code, as_of, limit),
+            )
+            rows = cur.fetchall()
+            rows.reverse()
+            series = []
+            for row in rows:
+                series.append(
+                    {
+                        "date": row[0].strftime("%Y-%m-%d"),
+                        "open": row[1],
+                        "high": row[2],
+                        "low": row[3],
+                        "close": row[4],
+                        "volume": row[5],
+                        "ma5": row[6],
+                        "ma20": row[7],
+                        "ma60": row[8],
+                        "ma120": row[9],
+                        "ma240": row[10],
+                        "bb_upper": row[11],
+                        "bb_lower": row[12],
+                        "bb_lower3": row[13],
+                        "di_plus": row[14],
+                        "di_minus": row[15],
+                        "adx": row[16],
+                    }
+                )
+            return series
+    finally:
+        conn.close()
 
 
 app = Flask(__name__)
@@ -237,29 +308,40 @@ def index() -> Response:
   <head>
     <meta charset="utf-8" />
     <title>StockSearcher Control</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
     <style>
       body {{
-        font-family: Arial, sans-serif;
-        margin: 24px;
+        font-family: "Roboto", sans-serif;
+        background: #f5f7fb;
+      }}
+      .page {{
+        max-width: 1200px;
+        margin: 32px auto;
+        padding: 0 16px;
+      }}
+      .card-panel {{
+        border-radius: 12px;
       }}
       .tabs {{
         display: flex;
-        gap: 8px;
-        border-bottom: 1px solid #ddd;
-        margin-bottom: 16px;
+        gap: 6px;
+        border-bottom: 1px solid #e0e0e0;
+        margin-bottom: 20px;
       }}
       .tab-btn {{
         border: none;
-        background: #f1f1f1;
-        padding: 8px 14px;
-        border-radius: 6px 6px 0 0;
+        background: #e3f2fd;
+        padding: 10px 16px;
+        border-radius: 8px 8px 0 0;
         cursor: pointer;
+        font-weight: 500;
       }}
       .tab-btn.active {{
-        background: #fff;
-        border: 1px solid #ddd;
-        border-bottom: 1px solid #fff;
+        background: #ffffff;
+        border: 1px solid #e0e0e0;
+        border-bottom: 1px solid #ffffff;
       }}
       .tab-panel {{
         display: none;
@@ -273,10 +355,11 @@ def index() -> Response:
         gap: 12px;
       }}
       form {{
-        border: 1px solid #ddd;
+        border: 1px solid #e0e0e0;
         padding: 12px;
-        border-radius: 6px;
-        background: #fafafa;
+        border-radius: 10px;
+        background: #ffffff;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
       }}
       button {{
         width: 100%;
@@ -290,38 +373,46 @@ def index() -> Response:
         padding-left: 18px;
       }}
       .search-bar {{
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 12px;
-        flex-wrap: wrap;
-        align-items: center;
-        margin-bottom: 16px;
-      }}
-      .search-bar label {{
-        font-size: 14px;
+        align-items: end;
+        margin-bottom: 12px;
       }}
       .search-bar select {{
-        padding: 6px;
-        font-size: 14px;
+        height: 2.6rem;
       }}
-      .search-bar button {{
-        padding: 8px 14px;
-        font-size: 14px;
+      .filter-bar {{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 12px;
+        margin: 8px 0 16px;
+      }}
+      .filter-actions {{
+        display: flex;
+        gap: 8px;
+        align-items: center;
       }}
       table.dataTable tbody tr td {{
         vertical-align: middle;
       }}
+      .dataTables_wrapper .dataTables_filter input {{
+        border-bottom: 1px solid #90caf9;
+      }}
     </style>
   </head>
   <body>
-    <h1>StockSearcher Control</h1>
-    {msg_html}
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="batch">Batch</button>
-      <button class="tab-btn" data-tab="search">Predict Search</button>
-    </div>
+    <div class="page">
+      <div class="card-panel white">
+        <h4 style="margin-top:0">StockSearcher Control</h4>
+        {msg_html}
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="batch">Batch</button>
+          <button class="tab-btn" data-tab="search">Predict Search</button>
+        </div>
 
-    <div class="tab-panel active" id="tab-batch">
-      <div class="section">
+        <div class="tab-panel active" id="tab-batch">
+          <div class="section">
       <h2>JP</h2>
       <div class="grid">
         {action_form("dataset_jp", "Run dataset_jp.py")}
@@ -330,7 +421,7 @@ def index() -> Response:
       </div>
       </div>
 
-      <div class="section">
+          <div class="section">
       <h2>KR</h2>
       <div class="grid">
         {action_form("dataset_kr", "Run dataset_kr.py")}
@@ -339,43 +430,67 @@ def index() -> Response:
       </div>
       </div>
 
-      <div class="section">
+          <div class="section">
       <h2>Active/Recent Tasks</h2>
       <ul>
         {''.join(html_tasks) if html_tasks else '<li>None</li>'}
       </ul>
       </div>
 
-      <div class="section">
+          <div class="section">
       <h2>Recent Logs</h2>
       <ul>
         {''.join(html_logs) if html_logs else '<li>No logs found</li>'}
       </ul>
       </div>
-    </div>
+        </div>
 
-    <div class="tab-panel" id="tab-search">
-      <div class="section">
+        <div class="tab-panel" id="tab-search">
+          <div class="section">
         <h2>Predict Search</h2>
         <div class="search-bar">
-          <label>
-            Market
+          <div class="input-field">
             <select id="market">
               <option value="KR">KR</option>
               <option value="JP">JP</option>
             </select>
-          </label>
-          <label>
-            As-of Date
+            <label>Market</label>
+          </div>
+          <div class="input-field">
             <select id="asof"></select>
-          </label>
-          <button id="search-btn">Search</button>
+            <label>As-of Date</label>
+          </div>
+          <div class="filter-actions">
+            <a class="btn waves-effect waves-light blue" id="search-btn">Search</a>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <div class="input-field">
+            <input id="open-min" type="number" step="0.0001">
+            <label for="open-min">Open min</label>
+          </div>
+          <div class="input-field">
+            <input id="open-max" type="number" step="0.0001">
+            <label for="open-max">Open max</label>
+          </div>
+          <div class="input-field">
+            <input id="close-min" type="number" step="0.0001">
+            <label for="close-min">Close min</label>
+          </div>
+          <div class="input-field">
+            <input id="close-max" type="number" step="0.0001">
+            <label for="close-max">Close max</label>
+          </div>
+          <div class="filter-actions">
+            <a class="btn-flat" id="clear-filters">Clear</a>
+          </div>
         </div>
         <table id="predict-table" class="display" style="width:100%">
           <thead>
             <tr>
               <th>as-of</th>
               <th>code</th>
+              <th>name</th>
               <th>probability</th>
               <th>open</th>
               <th>close</th>
@@ -386,12 +501,25 @@ def index() -> Response:
           </thead>
           <tbody></tbody>
         </table>
+        <div class="section">
+          <h5>Chart</h5>
+          <div id="chart" style="height: 720px;"></div>
+        </div>
+      </div>
+        </div>
       </div>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
     <script>
+      document.addEventListener("DOMContentLoaded", () => {{
+        const selects = document.querySelectorAll("select");
+        M.FormSelect.init(selects);
+      }});
+
       const tabs = document.querySelectorAll(".tab-btn");
       tabs.forEach((btn) => {{
         btn.addEventListener("click", () => {{
@@ -405,9 +533,35 @@ def index() -> Response:
       }});
 
       let table = null;
-      function formatCell(value) {{
-        if (value === null || value === undefined) return "";
-        return value;
+      function formatNumber(value) {{
+        if (value === null || value === undefined || value === "") return "";
+        const num = Number(value);
+        if (Number.isNaN(num)) return value;
+        return num.toLocaleString("en-US", {{ maximumFractionDigits: 4 }});
+      }}
+
+      function parseFilterValue(id) {{
+        const val = document.getElementById(id).value.trim();
+        if (!val) return null;
+        const num = Number(val);
+        return Number.isNaN(num) ? null : num;
+      }}
+
+      function registerFilters() {{
+        $.fn.dataTable.ext.search.push((settings, data) => {{
+          const openVal = Number(data[4].replace(/,/g, ""));
+          const closeVal = Number(data[5].replace(/,/g, ""));
+          const openMin = parseFilterValue("open-min");
+          const openMax = parseFilterValue("open-max");
+          const closeMin = parseFilterValue("close-min");
+          const closeMax = parseFilterValue("close-max");
+
+          if (openMin !== null && openVal < openMin) return false;
+          if (openMax !== null && openVal > openMax) return false;
+          if (closeMin !== null && closeVal < closeMin) return false;
+          if (closeMax !== null && closeVal > closeMax) return false;
+          return true;
+        }});
       }}
 
       async function loadDates(autoSearch = false) {{
@@ -422,6 +576,7 @@ def index() -> Response:
           opt.textContent = d;
           select.appendChild(opt);
         }});
+        M.FormSelect.init(select);
         if (autoSearch && data.dates.length) {{
           select.value = data.dates[0];
           await searchPredicts();
@@ -437,18 +592,27 @@ def index() -> Response:
         const rows = data.rows.map((r) => [
           r.as_of,
           r.code,
-          r.probability,
-          formatCell(r.open),
-          formatCell(r.close),
-          formatCell(r.low),
-          formatCell(r.high),
-          formatCell(r.volume),
+          r.name,
+          formatNumber(r.probability),
+          formatNumber(r.open),
+          formatNumber(r.close),
+          formatNumber(r.low),
+          formatNumber(r.high),
+          formatNumber(r.volume),
         ]);
         if (!table) {{
+          registerFilters();
           table = new DataTable("#predict-table", {{
             data: rows,
             pageLength: 50,
-            order: [[2, "desc"]],
+            order: [[3, "desc"]],
+          }});
+          $("#predict-table tbody").on("click", "tr", async function () {{
+            const row = table.row(this).data();
+            if (!row) return;
+            const code = row[1];
+            const asof = row[0];
+            await loadChart(code, asof);
           }});
         }} else {{
           table.clear();
@@ -461,8 +625,115 @@ def index() -> Response:
         await loadDates(true);
       }});
       document.getElementById("search-btn").addEventListener("click", searchPredicts);
+      ["open-min", "open-max", "close-min", "close-max"].forEach((id) => {{
+        document.getElementById(id).addEventListener("input", () => {{
+          if (table) table.draw();
+        }});
+      }});
+      document.getElementById("clear-filters").addEventListener("click", () => {{
+        ["open-min", "open-max", "close-min", "close-max"].forEach((id) => {{
+          const el = document.getElementById(id);
+          el.value = "";
+        }});
+        M.updateTextFields();
+        if (table) table.draw();
+      }});
 
       loadDates(true);
+
+      async function loadChart(code, asof) {{
+        const market = document.getElementById("market").value;
+        const res = await fetch(`/api/series?market=${{encodeURIComponent(market)}}&code=${{encodeURIComponent(code)}}&as_of=${{encodeURIComponent(asof)}}`);
+        const data = await res.json();
+        const series = data.series;
+        if (!series || !series.length) {{
+          Plotly.purge("chart");
+          return;
+        }}
+        const dates = series.map((d) => d.date);
+        const traceCandle = {{
+          x: dates,
+          open: series.map((d) => d.open),
+          high: series.map((d) => d.high),
+          low: series.map((d) => d.low),
+          close: series.map((d) => d.close),
+          type: "candlestick",
+          name: "Price",
+          xaxis: "x",
+          yaxis: "y",
+        }};
+        const maTrace = (key, name, color) => ({
+          x: dates,
+          y: series.map((d) => d[key]),
+          type: "scatter",
+          mode: "lines",
+          name,
+          line: { color, width: 1 },
+          xaxis: "x",
+          yaxis: "y",
+        });
+        const bbTrace = (key, name, color) => ({
+          x: dates,
+          y: series.map((d) => d[key]),
+          type: "scatter",
+          mode: "lines",
+          name,
+          line: { color, width: 1, dash: "dot" },
+          xaxis: "x",
+          yaxis: "y",
+        });
+        const volumeTrace = {{
+          x: dates,
+          y: series.map((d) => d.volume),
+          type: "bar",
+          name: "Volume",
+          xaxis: "x2",
+          yaxis: "y2",
+          marker: { color: "#90caf9" },
+        }};
+        const dmiTrace = (key, name, color) => ({
+          x: dates,
+          y: series.map((d) => d[key]),
+          type: "scatter",
+          mode: "lines",
+          name,
+          line: { color, width: 1 },
+          xaxis: "x3",
+          yaxis: "y3",
+        });
+        const layout = {{
+          grid: {{ rows: 3, columns: 1, pattern: "independent", roworder: "top to bottom" }},
+          height: 720,
+          margin: {{ t: 30, r: 20, b: 30, l: 50 }},
+          xaxis: {{ rangeslider: {{ visible: false }} }},
+          xaxis2: {{ matches: "x", showticklabels: false }},
+          xaxis3: {{ matches: "x" }},
+          yaxis: {{ title: "Price" }},
+          yaxis2: {{ title: "Volume" }},
+          yaxis3: {{ title: "DMI" }},
+          legend: {{ orientation: "h" }},
+        }};
+        Plotly.newPlot(
+          "chart",
+          [
+            traceCandle,
+            maTrace("ma5", "MA5", "#1e88e5"),
+            maTrace("ma20", "MA20", "#43a047"),
+            maTrace("ma60", "MA60", "#fb8c00"),
+            maTrace("ma120", "MA120", "#8e24aa"),
+            maTrace("ma240", "MA240", "#6d4c41"),
+            bbTrace("bb_upper", "BB Upper", "#ef5350"),
+            bbTrace("bb_lower", "BB Lower", "#ef5350"),
+            bbTrace("bb_lower3", "BB Lower3", "#c62828"),
+            volumeTrace,
+            dmiTrace("di_plus", "DI+", "#26a69a"),
+            dmiTrace("di_minus", "DI-", "#ef5350"),
+            dmiTrace("adx", "ADX", "#5c6bc0"),
+          ],
+          layout,
+          { responsive: true }
+        );
+      }}
     </script>
   </body>
 </html>
@@ -567,6 +838,20 @@ def api_predict() -> Response:
         return Response("missing as_of", status=400)
     rows = _fetch_predictions(market, as_of)
     payload = json.dumps({"rows": rows}, default=_json_default)
+    return Response(payload, mimetype="application/json")
+
+
+@app.get("/api/series")
+def api_series() -> Response:
+    market = request.args.get("market", "KR").upper()
+    code = request.args.get("code", "")
+    as_of = request.args.get("as_of", "")
+    if market not in ("KR", "JP"):
+        return Response("invalid market", status=400)
+    if not code or not as_of:
+        return Response("missing code/as_of", status=400)
+    series = _fetch_series(market, code, as_of, limit=240)
+    payload = json.dumps({"series": series}, default=_json_default)
     return Response(payload, mimetype="application/json")
 
 
