@@ -593,7 +593,7 @@ def index() -> Response:
         </table>
         <div class="section">
           <h5>Chart</h5>
-          <div id="chart" style="height: 1080px;"></div>
+          <div id="chart" style="height: 540px;"></div>
         </div>
       </div>
         </div>
@@ -805,7 +805,7 @@ def index() -> Response:
             pattern: "independent",
             roworder: "top to bottom",
           }},
-          height: 1080,
+          height: 540,
           margin: {{ t: 30, r: 20, b: 30, l: 50 }},
           xaxis: {{ rangeslider: {{ visible: false }}, domain: [0, 1] }},
           xaxis2: {{ matches: "x", showticklabels: false, domain: [0, 1] }},
