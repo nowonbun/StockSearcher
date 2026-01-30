@@ -332,7 +332,7 @@ def index() -> Response:
       }}
       .tab-btn {{
         border: none;
-        background: #e3f2fd;
+        background: transparent;
         padding: 10px 16px;
         border-radius: 8px 8px 0 0;
         cursor: pointer;
@@ -346,6 +346,9 @@ def index() -> Response:
       }}
       .tab-panel {{
         display: none;
+        background: #e8f5e9;
+        padding: 16px;
+        border-radius: 12px;
       }}
       .tab-panel.active {{
         display: block;
@@ -396,6 +399,12 @@ def index() -> Response:
         text-transform: uppercase;
         letter-spacing: 0.06em;
       }}
+      .legend-wrap {{
+        background: #e3f2fd;
+        padding: 8px 10px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+      }}
       .input-field input[type="number"] {{
         height: 2.2rem;
         font-size: 13px;
@@ -411,14 +420,20 @@ def index() -> Response:
       table.dataTable tbody tr td {{
         vertical-align: middle;
       }}
-      #predict-table tbody tr {{
+      #predict-table tbody td:nth-child(2) {{
         cursor: pointer;
+      }}
+      #predict-table tbody td:nth-child(2):hover {{
+        background: #1e88e5;
+        color: #fff;
       }}
       #predict-table tbody tr.selected {{
         background: #e8f5e9;
       }}
       .dataTables_wrapper .dataTables_filter input {{
         border-bottom: 1px solid #90caf9;
+        font-size: 8px;
+        height: 1.2rem;
       }}
     </style>
   </head>
@@ -469,8 +484,9 @@ def index() -> Response:
         <div class="tab-panel" id="tab-search">
           <div class="section">
         <h2>Predict Search</h2>
-        <div class="form-legend">Search</div>
-        <div class="search-bar">
+        <div class="legend-wrap">
+          <div class="form-legend">Search</div>
+          <div class="search-bar">
           <div class="input-field">
             <select id="market">
               <option value="KR">KR</option>
@@ -486,8 +502,10 @@ def index() -> Response:
             <a class="btn waves-effect waves-light blue" id="search-btn">Search</a>
           </div>
         </div>
-        <div class="form-legend">Filters (Open / Close)</div>
-        <div class="filter-bar">
+        </div>
+        <div class="legend-wrap">
+          <div class="form-legend">Filters (Open / Close)</div>
+          <div class="filter-bar">
           <div class="input-field">
             <input id="open-min" type="number" step="0.0001">
             <label for="open-min">Open min</label>
@@ -507,6 +525,7 @@ def index() -> Response:
           <div class="filter-actions">
             <a class="btn-flat" id="clear-filters">Clear</a>
           </div>
+        </div>
         </div>
         <table id="predict-table" class="display" style="width:100%">
           <thead>
@@ -737,7 +756,7 @@ def index() -> Response:
             columns: 1,
             pattern: "independent",
             roworder: "top to bottom",
-            rowheights: [0.7, 0.15, 0.15]
+            rowheights: [0.91, 0.045, 0.045]
           }},
           height: 2160,
           margin: {{ t: 30, r: 20, b: 30, l: 50 }},
@@ -767,7 +786,7 @@ def index() -> Response:
             dmiTrace("adx", "ADX", "#5c6bc0"),
           ],
           layout,
-          {{ responsive: true }}
+          {{ responsive: true, displayModeBar: false }}
         );
       }}
     </script>
