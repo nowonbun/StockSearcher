@@ -148,7 +148,7 @@ def _fetch_predict_dates(market: str, limit: int = 120) -> List[str]:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                f"SELECT DISTINCT as_of FROM {table} ORDER BY as_of DESC LIMIT %s",
+                f"SELECT DISTINCT data_cutoff FROM {table} ORDER BY data_cutoff DESC LIMIT %s",
                 (limit,),
             )
             return [row[0].strftime("%Y-%m-%d") for row in cur.fetchall()]
@@ -166,7 +166,7 @@ def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
             cur.execute(
                 f"""
                 SELECT
-                  p.as_of,
+                  p.data_cutoff,
                   p.code,
                   l.name,
                   p.probability,
@@ -179,8 +179,8 @@ def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
                 JOIN {list_table} l
                   ON l.code = p.code
                 JOIN {data_table} d
-                  ON d.code = p.code AND d.date = p.as_of
-                WHERE p.as_of = %s
+                  ON d.code = p.code AND d.date = p.data_cutoff
+                WHERE p.data_cutoff = %s
                 ORDER BY p.probability DESC
                 """,
                 (as_of,),
@@ -189,7 +189,7 @@ def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
             for row in cur.fetchall():
                 rows.append(
                     {
-                        "as_of": row[0].strftime("%Y-%m-%d"),
+                        "data_cutoff": row[0].strftime("%Y-%m-%d"),
                         "code": row[1],
                         "name": row[2],
                         "probability": row[3],
@@ -554,7 +554,7 @@ def index() -> Response:
           </div>
           <div class="input-field">
             <select id="asof"></select>
-            <label>As-of Date</label>
+            <label>Data Cutoff</label>
           </div>
           <div class="filter-actions">
             <a class="btn waves-effect waves-light blue" id="search-btn">Search</a>
@@ -588,7 +588,7 @@ def index() -> Response:
         <table id="predict-table" class="display" style="width:100%">
           <thead>
             <tr>
-              <th>as-of</th>
+              <th>data_cutoff</th>
               <th>code</th>
               <th>name</th>
               <th>probability</th>
@@ -686,7 +686,7 @@ def index() -> Response:
         const res = await fetch(`/api/predict?market=${{encodeURIComponent(market)}}&as_of=${{encodeURIComponent(asof)}}`);
         const data = await res.json();
         const rows = data.rows.map((r) => [
-          r.as_of,
+          r.data_cutoff,
           r.code,
           r.name,
           formatNumber(r.probability),

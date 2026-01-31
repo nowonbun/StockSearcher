@@ -29,17 +29,16 @@ def _fetch_sequence(
     table: str,
     code: str,
     seq_len: int,
-    as_of: str | None,
+    cutoff_date: str | None,
 ) -> np.ndarray | None:
     not_null = _build_not_null_clause(FEATURE_COLS)
-    if as_of:
-        cutoff = (pd.to_datetime(as_of).date() - timedelta(days=1)).isoformat()
+    if cutoff_date:
         query = (
             f"SELECT {', '.join(FEATURE_COLS)} FROM {table} "
             f"WHERE code = %s AND date <= %s AND {not_null} "
             "ORDER BY date DESC LIMIT %s"
         )
-        params: Tuple[object, ...] = (code, cutoff, seq_len)
+        params: Tuple[object, ...] = (code, cutoff_date, seq_len)
     else:
         query = (
             f"SELECT {', '.join(FEATURE_COLS)} FROM {table} "
@@ -64,7 +63,7 @@ def predict_probs(
     seq_len: int,
     mean: np.ndarray,
     std: np.ndarray,
-    as_of: str | None,
+    cutoff_date: str | None,
     log_every: int,
     min_trans_amnt_sum: float | None,
     liquidity_days: int,
@@ -79,7 +78,7 @@ def predict_probs(
         for idx, code in enumerate(codes, start=1):
             if idx == 1 or idx % log_every == 0:
                 print(f"[infer] code={code} ({idx})")
-            seq = _fetch_sequence(conn, table, code, seq_len, as_of)
+            seq = _fetch_sequence(conn, table, code, seq_len, cutoff_date)
             if seq is None:
                 continue
             if min_trans_amnt_sum is not None:
@@ -143,6 +142,22 @@ def main() -> None:
     cutoff_date = get_cutoff_date(args.table, args.start_date, args.end_date, args.val_ratio)
     mean, std = compute_feature_stats(args.table, args.start_date, args.end_date, cutoff_date)
 
+    conn = mysql.connector.connect(**static.db_config_kr)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT MAX(date) FROM {args.table}")
+            max_date_row = cur.fetchone()
+        max_date = max_date_row[0] if max_date_row else None
+    finally:
+        conn.close()
+
+    requested_cutoff = (pd.to_datetime(args.as_of).date() - timedelta(days=1)).isoformat()
+    if max_date is not None:
+        max_date_str = max_date.isoformat()
+        effective_cutoff = min(requested_cutoff, max_date_str)
+    else:
+        effective_cutoff = requested_cutoff
+
     model = PriceLSTM(
         input_size=len(FEATURE_COLS),
         hidden_size=args.hidden_size,
@@ -159,7 +174,7 @@ def main() -> None:
         args.seq_len,
         mean,
         std,
-        args.as_of,
+        effective_cutoff,
         args.log_every,
         args.min_trans_amnt_sum,
         args.liquidity_days,
@@ -181,20 +196,23 @@ def main() -> None:
     if args.save_db:
         if args.run_name is None:
             args.run_name = args.model
+        args.data_cutoff = effective_cutoff
         save_predictions(args, top)
 
 
 def save_predictions(args: argparse.Namespace, rows: List[Tuple[str, float]]) -> None:
+    data_cutoff = getattr(args, "data_cutoff", args.as_of)
     conn = mysql.connector.connect(**static.db_config_kr)
     try:
         with conn.cursor() as cur:
             cur.executemany(
                 """
                 INSERT INTO STOCK_PREDICT_KR
-                    (as_of, code, probability, run_name, seq_len, horizon_days, rise_threshold, created_at)
+                    (as_of, data_cutoff, code, probability, run_name, seq_len, horizon_days, rise_threshold, created_at)
                 VALUES
-                    (%s, %s, %s, %s, %s, %s, %s, now())
+                    (%s, %s, %s, %s, %s, %s, %s, %s, now())
                 ON DUPLICATE KEY UPDATE
+                    data_cutoff = VALUES(data_cutoff),
                     probability = VALUES(probability),
                     run_name = VALUES(run_name),
                     seq_len = VALUES(seq_len),
@@ -205,6 +223,7 @@ def save_predictions(args: argparse.Namespace, rows: List[Tuple[str, float]]) ->
                 [
                     (
                         args.as_of,
+                        data_cutoff,
                         code,
                         float(prob),
                         args.run_name,

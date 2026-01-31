@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_KR (
 
 CREATE TABLE IF NOT EXISTS STOCK_PREDICT_KR (
     as_of         DATE         NOT NULL,
+    data_cutoff   DATE         NOT NULL,
     code          VARCHAR(12)  NOT NULL,
     probability   DECIMAL(10,6) NOT NULL,
     run_name      VARCHAR(200) NOT NULL,
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_KR (
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (as_of, code),
     KEY idx_stock_predict_kr_asof (as_of),
+    KEY idx_stock_predict_kr_cutoff (data_cutoff),
     CONSTRAINT fk_stock_predict_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
         ON UPDATE CASCADE
         ON DELETE CASCADE
@@ -173,6 +175,7 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_JP (
 
 CREATE TABLE IF NOT EXISTS STOCK_PREDICT_JP (
     as_of         DATE         NOT NULL,
+    data_cutoff   DATE         NOT NULL,
     code          VARCHAR(12)  NOT NULL,
     probability   DECIMAL(10,6) NOT NULL,
     run_name      VARCHAR(200) NOT NULL,
@@ -182,6 +185,7 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_JP (
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (as_of, code),
     KEY idx_stock_predict_jp_asof (as_of),
+    KEY idx_stock_predict_jp_cutoff (data_cutoff),
     CONSTRAINT fk_stock_predict_jp_list FOREIGN KEY (code) REFERENCES STOCK_LIST_JP (code)
         ON UPDATE CASCADE
         ON DELETE CASCADE
