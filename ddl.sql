@@ -190,20 +190,3 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_JP (
         ON UPDATE CASCADE
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
---COMMON -----------------------------
-CREATE TABLE IF NOT EXISTS DATE_KEY (
-    idx         INT      NOT NULL,
-    date        DATE     NOT NULL,
-    type        VARCHAR(20) NOT NULL
-    PRIMARY KEY (date, idx)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-INSERT INTO DATE_KEY
-SELECT
-  ROW_NUMBER() OVER (ORDER BY date ASC) AS no,
-  date,
-  'date'
-FROM (
-  SELECT DISTINCT date FROM stock_data
-) t
-ORDER BY date ASC;

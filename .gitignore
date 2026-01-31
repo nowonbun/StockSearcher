@@ -12,3 +12,4 @@ backup/model_kr.pt.2
 backup/model_kr.pt.3
 backup/model_jp.pt.1
 backup/model_kr.pt.4
+config.toml
