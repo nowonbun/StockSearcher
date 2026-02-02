@@ -151,7 +151,7 @@ def main() -> None:
     finally:
         conn.close()
 
-    requested_cutoff = (pd.to_datetime(args.as_of).date() - timedelta(days=1)).isoformat()
+    requested_cutoff = pd.to_datetime(args.as_of).date().isoformat()
     if max_date is not None:
         max_date_str = max_date.isoformat()
         effective_cutoff = min(requested_cutoff, max_date_str)
