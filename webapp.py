@@ -789,18 +789,18 @@ def index() -> Response:
           return;
         }}
         const dates = series.map((d) => d.date);
-        const missingDates = (() => {
+        const missingDates = (() => {{
           if (!dates.length) return [];
           const present = new Set(dates);
           const start = new Date(dates[0] + "T00:00:00Z");
           const end = new Date(dates[dates.length - 1] + "T00:00:00Z");
           const missing = [];
-          for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+          for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {{
             const iso = d.toISOString().slice(0, 10);
             if (!present.has(iso)) missing.push(iso);
-          }
+          }}
           return missing;
-        })();
+        }})();
         const traceCandle = {{
           x: dates,
           open: series.map((d) => d.open),
