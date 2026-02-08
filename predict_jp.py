@@ -208,11 +208,10 @@ def save_predictions(args: argparse.Namespace, rows: List[Tuple[str, float]]) ->
             cur.executemany(
                 """
                 INSERT INTO STOCK_PREDICT_JP
-                    (as_of, data_cutoff, code, probability, run_name, seq_len, horizon_days, rise_threshold, created_at)
+                    (data_cutoff, code, probability, run_name, seq_len, horizon_days, rise_threshold, created_at)
                 VALUES
-                    (%s, %s, %s, %s, %s, %s, %s, %s, now())
+                    (%s, %s, %s, %s, %s, %s, %s, now())
                 ON DUPLICATE KEY UPDATE
-                    data_cutoff = VALUES(data_cutoff),
                     probability = VALUES(probability),
                     run_name = VALUES(run_name),
                     seq_len = VALUES(seq_len),
@@ -222,7 +221,6 @@ def save_predictions(args: argparse.Namespace, rows: List[Tuple[str, float]]) ->
                 """,
                 [
                     (
-                        args.as_of,
                         data_cutoff,
                         code,
                         float(prob),

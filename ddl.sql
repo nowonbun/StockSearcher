@@ -76,8 +76,8 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_KR (
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS STOCK_PREDICT_KR;
 CREATE TABLE IF NOT EXISTS STOCK_PREDICT_KR (
-    as_of         DATE         NOT NULL,
     data_cutoff   DATE         NOT NULL,
     code          VARCHAR(12)  NOT NULL,
     probability   DECIMAL(10,6) NOT NULL,
@@ -86,9 +86,7 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_KR (
     horizon_days  INT          NOT NULL,
     rise_threshold DECIMAL(6,4) NOT NULL,
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (as_of, code),
-    KEY idx_stock_predict_kr_asof (as_of),
-    KEY idx_stock_predict_kr_cutoff (data_cutoff),
+    PRIMARY KEY (data_cutoff, code),
     CONSTRAINT fk_stock_predict_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
         ON UPDATE CASCADE
         ON DELETE CASCADE
@@ -173,8 +171,8 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_JP (
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS STOCK_PREDICT_JP;
 CREATE TABLE IF NOT EXISTS STOCK_PREDICT_JP (
-    as_of         DATE         NOT NULL,
     data_cutoff   DATE         NOT NULL,
     code          VARCHAR(12)  NOT NULL,
     probability   DECIMAL(10,6) NOT NULL,
@@ -183,9 +181,7 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_JP (
     horizon_days  INT          NOT NULL,
     rise_threshold DECIMAL(6,4) NOT NULL,
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (as_of, code),
-    KEY idx_stock_predict_jp_asof (as_of),
-    KEY idx_stock_predict_jp_cutoff (data_cutoff),
+    PRIMARY KEY (data_cutoff, code),
     CONSTRAINT fk_stock_predict_jp_list FOREIGN KEY (code) REFERENCES STOCK_LIST_JP (code)
         ON UPDATE CASCADE
         ON DELETE CASCADE
