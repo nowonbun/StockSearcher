@@ -6,7 +6,8 @@ selenium
 webdriver-manager
 finance-datareader @ git+https://github.com/FinanceData/FinanceDataReader.git
 yahoo_finance_api2
-torch==2.2.2
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
 numpy<2
 xlrd>=2.0.1
 openpyxl
