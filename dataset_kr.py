@@ -23,6 +23,7 @@ from typing import Any, Iterable, List, Sequence, Tuple
 import FinanceDataReader as fdr
 import mysql.connector
 import pandas as pd
+import requests
 
 import function.common as common
 import function.static as static
@@ -123,9 +124,60 @@ def _fetch_stock_listing() -> pd.DataFrame:
     except Exception as e:
         last_err = e
 
+    _log("KRX listing failed, trying KIND corpList fallback.")
+    try:
+        df_kind = _fetch_stock_listing_kind(("KOSPI", "KOSDAQ", "KONEX"))
+        if df_kind is not None and not df_kind.empty:
+            return df_kind
+    except Exception as e:
+        last_err = e
+
     if last_err is not None:
         raise last_err
     raise RuntimeError("KRX listing failed with no error information.")
+
+
+def _fetch_stock_listing_kind(markets: Sequence[str]) -> pd.DataFrame:
+    url = "https://kind.krx.co.kr/corpgeneral/corpList.do"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    kind_market = {
+        "KOSPI": "stockMkt",
+        "KOSDAQ": "kosdaqMkt",
+        "KONEX": "konexMkt",
+    }
+
+    def _normalize_code(val: Any) -> str:
+        s = str(val).strip()
+        if s.isdigit():
+            return s.zfill(6)
+        try:
+            return f"{int(float(s)):06d}"
+        except Exception:
+            return s
+
+    frames: List[pd.DataFrame] = []
+    for market in markets:
+        params = {
+            "method": "download",
+            "searchType": "13",
+            "marketType": kind_market.get(market, ""),
+        }
+        resp = requests.get(url, params=params, headers=headers, timeout=15)
+        resp.raise_for_status()
+        tables = pd.read_html(resp.content, header=0)
+        if not tables:
+            continue
+        df = tables[0].copy()
+        if "회사명" not in df.columns or "종목코드" not in df.columns:
+            continue
+        df = df[["회사명", "종목코드"]].rename(columns={"회사명": "Name", "종목코드": "Code"})
+        df["Code"] = df["Code"].map(_normalize_code)
+        df["Market"] = market
+        frames.append(df)
+
+    if frames:
+        return pd.concat(frames, ignore_index=True)
+    return pd.DataFrame(columns=["Code", "Name", "Market"])
 
 
 # ----------------------------
