@@ -1235,7 +1235,8 @@ def create_asgi_app() -> Starlette:
             Mount("/mcp", app=mcp_app),
             WebSocketRoute("/ws/logs/{name}", ws_log),
             Mount("/", app=WSGIMiddleware(app)),
-        ]
+        ],
+        lifespan=mcp_app.lifespan,
     )
 
 
