@@ -352,7 +352,7 @@ def _fetch_stock_data(
 
 
 app = Flask(__name__)
-mcp = FastMCP("stocksearcher-mcp", streamable_http_path="/")
+mcp = FastMCP("stocksearcher-mcp", streamable_http_path="/", host=os.environ.get("MCP_HOST", os.environ.get("WEB_HOST", "0.0.0.0")))
 
 @mcp.tool()
 def list_stocks(market: str = "KR") -> List[Dict[str, object]]:
