@@ -5,14 +5,21 @@ import json
 import os
 import threading
 import time
+import datetime as dt
 from decimal import Decimal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import anyio
 from flask import Flask, Response, redirect, request, url_for
-from flask_sock import Sock
 import mysql.connector
+from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.middleware.wsgi import WSGIMiddleware
+from starlette.routing import Mount, WebSocketRoute
+from starlette.websockets import WebSocket, WebSocketDisconnect
+import uvicorn
 
 import function.static as static
 import subprocess
@@ -273,8 +280,125 @@ def _fetch_series(market: str, code: str, as_of: str, limit: int = 240) -> List[
         conn.close()
 
 
+def _normalize_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (dt.date, dt.datetime)):
+        return value.strftime("%Y-%m-%d")
+    return value
+
+
+def _normalize_row(row: Dict[str, object]) -> Dict[str, object]:
+    return {key: _normalize_value(val) for key, val in row.items()}
+
+
+def _fetch_stock_list(market: str) -> List[Dict[str, object]]:
+    table = _list_table(market)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT code, name
+                FROM {table}
+                ORDER BY name, code
+                """
+            )
+            return [
+                {"code": row[0], "name": row[1]}
+                for row in cur.fetchall()
+            ]
+    finally:
+        conn.close()
+
+
+def _fetch_stock_data(
+    market: str,
+    code: str,
+    limit: int = 2000,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> List[Dict[str, object]]:
+    table = _data_table(market)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor(dictionary=True) as cur:
+            clauses = ["code = %s"]
+            params: List[object] = [code]
+            if start_date:
+                clauses.append("date >= %s")
+                params.append(start_date)
+            if end_date:
+                clauses.append("date <= %s")
+                params.append(end_date)
+            where_sql = " AND ".join(clauses)
+            limit_sql = "" if limit is None or limit <= 0 else " LIMIT %s"
+            if limit_sql:
+                params.append(limit)
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {table}
+                WHERE {where_sql}
+                ORDER BY date DESC
+                {limit_sql}
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall()
+            return [_normalize_row(row) for row in rows]
+    finally:
+        conn.close()
+
+
 app = Flask(__name__)
-sock = Sock(app)
+mcp = FastMCP("stocksearcher-mcp", streamable_http_path="/")
+
+@mcp.tool()
+def list_stocks(market: str = "KR") -> List[Dict[str, object]]:
+    """List stocks for a market (KR or JP)."""
+    market = market.upper()
+    if market not in ("KR", "JP"):
+        raise ValueError("market must be KR or JP")
+    return _fetch_stock_list(market)
+
+
+@mcp.tool()
+def stock_data(
+    market: str,
+    code: str,
+    limit: int = 2000,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> List[Dict[str, object]]:
+    """Return stock_data rows for a code, ordered by date DESC."""
+    market = market.upper()
+    if market not in ("KR", "JP"):
+        raise ValueError("market must be KR or JP")
+    if not code:
+        raise ValueError("code is required")
+    return _fetch_stock_data(market, code, limit=limit, start_date=start_date, end_date=end_date)
+
+
+@mcp.tool()
+def list_predict_dates(market: str = "KR", limit: int = 120) -> List[str]:
+    """List available prediction dates (data_cutoff) for a market."""
+    market = market.upper()
+    if market not in ("KR", "JP"):
+        raise ValueError("market must be KR or JP")
+    return _fetch_predict_dates(market, limit=limit)
+
+
+@mcp.tool()
+def predict_rows(market: str, as_of: str) -> List[Dict[str, object]]:
+    """Return prediction rows for a market and data_cutoff (as_of)."""
+    market = market.upper()
+    if market not in ("KR", "JP"):
+        raise ValueError("market must be KR or JP")
+    if not as_of:
+        raise ValueError("as_of is required")
+    return _fetch_predictions(market, as_of)
+
 
 
 @app.get("/")
@@ -1059,41 +1183,73 @@ def _tail_bytes(path: Path, max_bytes: int = 20000) -> Tuple[str, int]:
     return text, size
 
 
-@sock.route("/ws/logs/<name>")
-def stream_log(ws, name: str) -> None:
-    path = _safe_log_path(name)
-    if path is None:
-        ws.send("[error] not found\n")
-        return
+def _read_new_bytes(path: Path, pos: int) -> Tuple[str, int]:
     try:
-        text, pos = _tail_bytes(path)
-        if text:
-            ws.send(text)
         with path.open("rb") as handle:
             handle.seek(pos)
-            while True:
-                chunk = handle.read()
-                if chunk:
-                    ws.send(chunk.decode("utf-8", errors="replace"))
-                    pos = handle.tell()
-                    continue
-                time.sleep(0.5)
-                try:
-                    size = path.stat().st_size
-                except FileNotFoundError:
-                    continue
-                if size < pos:
-                    handle.seek(0)
-                    pos = 0
-    except Exception:
+            data = handle.read()
+            new_pos = handle.tell()
+    except FileNotFoundError:
+        return "", pos
+    if data:
+        return data.decode("utf-8", errors="replace"), new_pos
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError:
+        return "", pos
+    if size < pos:
+        return "", 0
+    return "", pos
+
+
+async def ws_log(websocket: WebSocket) -> None:
+    await websocket.accept()
+    name = websocket.path_params.get("name", "")
+    path = _safe_log_path(name)
+    if path is None:
+        await websocket.send_text("[error] not found\n")
+        await websocket.close()
         return
+    try:
+        text, pos = await anyio.to_thread.run_sync(_tail_bytes, path)
+        if text:
+            await websocket.send_text(text)
+        while True:
+            await anyio.sleep(0.5)
+            chunk, pos = await anyio.to_thread.run_sync(_read_new_bytes, path, pos)
+            if chunk:
+                await websocket.send_text(chunk)
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        await websocket.close()
+        return
+
+
+
+
+def create_asgi_app() -> Starlette:
+    mcp_app = mcp.streamable_http_app()
+    return Starlette(
+        routes=[
+            Mount("/mcp", app=mcp_app),
+            WebSocketRoute("/ws/logs/{name}", ws_log),
+            Mount("/", app=WSGIMiddleware(app)),
+        ]
+    )
+
+
+ASGI_APP = create_asgi_app()
+
+
 
 
 def main() -> None:
     host = os.environ.get("WEB_HOST", "0.0.0.0")
     port = int(os.environ.get("WEB_PORT", "9999"))
-    app.run(host=host, port=port)
+    uvicorn.run(ASGI_APP, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
     main()
+
