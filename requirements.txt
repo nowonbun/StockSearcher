@@ -14,4 +14,7 @@ openpyxl
 flask
 flask-sock
 anyio
+mcp
+starlette
+uvicorn
 lxml
