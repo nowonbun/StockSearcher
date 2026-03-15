@@ -92,6 +92,29 @@ python run.py kr
 - 인자를 생략하면 기본값(`jp`)으로 실행됩니다.
 - 한국 수집 파이프라인은 기본 5개 스레드로 종목을 병렬 처리합니다.
 
+## MCP ?? (?? ???? /mcp ??)
+
+`webapp.py`? ? UI? MCP? ?? ???? ?????.
+
+```bash
+python webapp.py
+```
+
+- ? UI: `/`
+- MCP Streamable HTTP: `/mcp`
+- ?? WebSocket: `/ws/logs/{name}`
+
+### MCP ?? ??
+
+- `list_stocks(market="KR"|"JP")`
+  - ?? ??? (`code`, `name`)
+- `stock_data(market, code, limit=2000, start_date=None, end_date=None)`
+  - ?? ??? ?? ?? (?? ??)
+- `list_predict_dates(market="KR"|"JP", limit=120)`
+  - ??? ???? `data_cutoff` ?? ??
+- `predict_rows(market, as_of)`
+  - ?? ??? ?? ?? (`data_cutoff`, `code`, `name`, `probability`, `open`, `close`, `low`, `high`, `volume`)
+
 ## Docker + cron 실행
 
 JP는 새벽 2시, KR은 새벽 4시에 컨테이너 내부 cron으로 실행하도록 구성했습니다. `model_*.pt`는 Windows 공유 폴더를 마운트해서 사용합니다.
