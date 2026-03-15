@@ -1230,13 +1230,16 @@ async def ws_log(websocket: WebSocket) -> None:
 
 def create_asgi_app() -> Starlette:
     mcp_app = mcp.streamable_http_app()
+    lifespan = getattr(mcp_app, "lifespan", None)
+    if lifespan is None and hasattr(mcp_app, "router"):
+        lifespan = mcp_app.router.lifespan_context
     return Starlette(
         routes=[
             Mount("/mcp", app=mcp_app),
             WebSocketRoute("/ws/logs/{name}", ws_log),
             Mount("/", app=WSGIMiddleware(app)),
         ],
-        lifespan=mcp_app.lifespan,
+        lifespan=lifespan,
     )
 
 
