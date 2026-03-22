@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from typing import Iterable, List, Tuple
 
+import math
+
 import numpy as np
 import pandas as pd
 import torch
@@ -479,7 +481,7 @@ def parse_args() -> argparse.Namespace:
     # 진행 로그 및 평가
     parser.add_argument("--log-codes", action="store_true", help="코드별 로딩 로그 출력")
     parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
-    parser.add_argument("--eval-threshold", type=float, default=0.5, help="평가용 확률 임계값")
+    parser.add_argument("--eval-threshold", type=float, default=0.3, help="평가용 확률 임계값")
     return parser.parse_args()
 
 
@@ -538,6 +540,15 @@ def main() -> None:
     ).to(device)
     if args.resume:
         model.load_state_dict(torch.load(args.resume, map_location=device))
+    elif args.pos_weight is not None:
+        # pos_weight에서 예상 positive rate를 역산해 출력 레이어 bias 초기화
+        # 기본 bias=0 → sigmoid(0)=0.5로 시작하면 imbalanced 데이터에서 trivial solution(전부 0 예측)에 빠지기 쉬움
+        # bias = log(p / (1-p)), p = 1 / (1 + pos_weight)
+        pos_rate = 1.0 / (1.0 + args.pos_weight)
+        bias_init = math.log(pos_rate / (1.0 - pos_rate))
+        with torch.no_grad():
+            model.head[-1].bias.fill_(bias_init)
+        print(f"output bias initialized to {bias_init:.4f} (pos_rate={pos_rate:.4f})")
 
     train_loop(
         model,
