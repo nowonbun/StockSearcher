@@ -92,28 +92,28 @@ python run.py kr
 - 인자를 생략하면 기본값(`jp`)으로 실행됩니다.
 - 한국 수집 파이프라인은 기본 5개 스레드로 종목을 병렬 처리합니다.
 
-## MCP ?? (?? ???? /mcp ??)
+## MCP 실행 (웹 UI 포함 / `/mcp` 제공)
 
-`webapp.py`? ? UI? MCP? ?? ???? ?????.
+`webapp.py`는 웹 UI와 MCP 엔드포인트를 함께 제공합니다.
 
 ```bash
 python webapp.py
 ```
 
-- ? UI: `/`
+- 웹 UI: `/`
 - MCP Streamable HTTP: `/mcp`
-- ?? WebSocket: `/ws/logs/{name}`
+- 로그 WebSocket: `/ws/logs/{name}`
 
-### MCP ?? ??
+### MCP 제공 도구
 
 - `list_stocks(market="KR"|"JP")`
-  - ?? ??? (`code`, `name`)
+  - 시장 종목 목록 (`code`, `name`)
 - `stock_data(market, code, limit=2000, start_date=None, end_date=None)`
-  - ?? ??? ?? ?? (?? ??)
+  - 종목 시세 데이터 조회 (최신순 반환)
 - `list_predict_dates(market="KR"|"JP", limit=120)`
-  - ??? ???? `data_cutoff` ?? ??
+  - 예측 기준일 `data_cutoff` 목록 조회
 - `predict_rows(market, as_of)`
-  - ?? ??? ?? ?? (`data_cutoff`, `code`, `name`, `probability`, `open`, `close`, `low`, `high`, `volume`)
+  - 해당 기준일 예측 결과 조회 (`data_cutoff`, `code`, `name`, `probability`, `open`, `close`, `low`, `high`, `volume`)
 
 ## Docker + cron 실행
 
