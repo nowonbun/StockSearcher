@@ -56,6 +56,8 @@ def compute_rsi(closes: np.ndarray, period: int = 14) -> np.ndarray:
     losses = np.where(deltas < 0, -deltas, 0.0)
     avg_gain = float(gains[:period].mean())
     avg_loss = float(losses[:period].mean())
+    rs = avg_gain / (avg_loss + 1e-10)
+    rsi[period] = 100.0 - 100.0 / (1.0 + rs)
     for t in range(period, len(deltas)):
         avg_gain = (avg_gain * (period - 1) + gains[t]) / period
         avg_loss = (avg_loss * (period - 1) + losses[t]) / period
@@ -409,6 +411,10 @@ def train_loop(
             + (f" pw={current_weight:.4f}" if current_weight is not None else "")
         )
 
+        best_f1 = max(best_f1, f1)
+        torch.save(model.state_dict(), model_out)
+        print(f"  -> saved current epoch model (epoch={epoch}, f1={f1:.4f}, best_f1={best_f1:.4f})")
+
         drop_any = (
             prev_prec is not None
             and prev_rec is not None
@@ -436,10 +442,13 @@ def train_loop(
         prev_rec = rec
 
         # val_loss 대신 F1 기준으로 저장 (불균형 데이터 환경에 적합)
-        if f1 > best_f1:
-            best_f1 = f1
-            torch.save(model.state_dict(), model_out)
-            print(f"  -> saved (best f1={best_f1:.4f})")
+        # if f1 > best_f1:
+        #     best_f1 = f1
+        #     torch.save(model.state_dict(), model_out)
+        #     print(f"  -> saved (best f1={best_f1:.4f})")
+        # best_f1 = max(best_f1, f1)
+        # torch.save(model.state_dict(), model_out)
+        # print(f"  -> saved (epoch={epoch}, f1={f1:.4f}, best_f1={best_f1:.4f})")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -452,16 +461,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
     # 윈도우/라벨 정의
     parser.add_argument("--seq-len", type=int, default=60, help="시퀀스 길이(일)")
-    parser.add_argument("--horizon-days", type=int, default=5, help="라벨 기준 기간(일)")
-    parser.add_argument("--rise-threshold", type=float, default=0.10, help="목표 상승률 (예: 0.10 = +10%)")
-    parser.add_argument("--max-drawdown", type=float, default=0.03, help="기간 내 허용 최대 낙폭")
-    parser.add_argument("--min-trans-amnt-sum", type=float, default=500000000 * 5, help="유동성 기간 내 TransAmnt 합 최소값")
+    parser.add_argument("--horizon-days", type=int, default=10, help="라벨 기준 기간(일)")
+    parser.add_argument("--rise-threshold", type=float, default=0.05, help="목표 상승률 (예: 0.05 = +5%%)")
+    parser.add_argument("--max-drawdown", type=float, default=0.05, help="기간 내 허용 최대 낙폭")
+    parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000, help="유동성 기간 내 TransAmnt 합 최소값")
     parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 학습/검증 분리
     parser.add_argument("--val-ratio", type=float, default=0.2, help="날짜 기준 검증 비율")
     # 학습 루프
     parser.add_argument("--batch-size", type=int, default=2048, help="배치 크기")
-    parser.add_argument("--epochs", type=int, default=20, help="학습 에폭 수")
+    parser.add_argument("--epochs", type=int, default=30, help="학습 에폭 수")
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     parser.add_argument("--clip-grad-norm", type=float, default=1.0, help="gradient clipping max norm (0=비활성)")
     # 모델 구조
@@ -471,19 +480,19 @@ def parse_args() -> argparse.Namespace:
     # 체크포인트 및 클래스 불균형
     parser.add_argument("--model-out", default="model_jp.pt", help="모델 저장 경로")
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
-    parser.add_argument("--pos-weight", type=float, default=33.77, help="BCE pos_weight (불균형 보정)")
-    parser.add_argument("--adaptive-pos-weight", action="store_true", help="prec/rec 하락 시 pos_weight 적응 조정")
-    parser.add_argument("--pos-weight-step", type=float, default=0.05, help="pos_weight 조정 비율 (예: 0.05 = 5%)")
+    parser.add_argument("--pos-weight", type=float, default=None, help="BCE pos_weight (불균형 보정). None이면 pos_rate로 자동 산출")
+    parser.add_argument("--adaptive-pos-weight", action=argparse.BooleanOptionalAction, default=True, help="prec/rec 하락 시 pos_weight 적응 조정")
+    parser.add_argument("--pos-weight-step", type=float, default=0.05, help="pos_weight 조정 비율 (예: 0.05 = 5%%)")
     parser.add_argument("--drop-patience", type=int, default=3, help="연속 하락 횟수로 조기 종료")
     # Focal Loss
-    parser.add_argument("--use-focal-loss", action="store_true", help="BCEWithLogitsLoss 대신 Focal Loss 사용")
+    parser.add_argument("--use-focal-loss", action=argparse.BooleanOptionalAction, default=True, help="BCEWithLogitsLoss 대신 Focal Loss 사용")
     parser.add_argument("--focal-gamma", type=float, default=2.0, help="Focal Loss gamma 파라미터")
     # 진행 로그 및 평가
     parser.add_argument("--log-codes", action="store_true", help="코드별 로딩 로그 출력")
     parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
     parser.add_argument("--eval-threshold", type=float, default=0.3, help="평가용 확률 임계값")
-    parser.add_argument("--pos-rate", type=float, default=None,
-                        help="실제 양성 비율 (예: 0.04). 지정 시 pos_weight를 재산출하고 bias 초기화에 사용")
+    parser.add_argument("--pos-rate", type=float, default=0.06,
+                        help="실제 양성 비율 (예: 0.06). 지정 시 pos_weight를 재산출하고 bias 초기화에 사용")
     return parser.parse_args()
 
 

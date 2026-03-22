@@ -15,7 +15,6 @@ from model_jp import (
     FEATURE_COLS,
     PriceLSTM,
     append_computed_features,
-    get_cutoff_date,
     load_codes,
     CLOSE_INDEX,
     TRANS_AMNT_INDEX,
@@ -109,19 +108,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--table", default="STOCK_DATA_JP", help="DB 테이블 이름")
     parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
     parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
-    parser.add_argument("--val-ratio", type=float, default=0.2, help="날짜 기준 검증 비율")
     # 윈도우/라벨 정의 (특징 계산 + DB 저장에 사용).
     parser.add_argument("--seq-len", type=int, default=60, help="시퀀스 길이(일)")
-    parser.add_argument("--horizon-days", type=int, default=5, help="라벨 기준 기간(일)")
-    parser.add_argument("--rise-threshold", type=float, default=0.10, help="목표 상승률 (예: 0.10 = +10%)")
-    parser.add_argument("--min-trans-amnt-sum", type=float, default=200000000 * 5, help="유동성 기간 내 TransAmnt 합 최소값")
+    parser.add_argument("--horizon-days", type=int, default=10, help="라벨 기준 기간(일)")
+    parser.add_argument("--rise-threshold", type=float, default=0.05, help="목표 상승률 (예: 0.05 = +5%%)")
+    parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000, help="유동성 기간 내 TransAmnt 합 최소값")
     parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 추론 기준일/모델 선택.
     parser.add_argument("--as-of", default=str(date.today()), help="예측 기준일 (YYYY-MM-DD)")
     parser.add_argument("--model", default="model_jp.pt", help="모델 경로")
     parser.add_argument("--hidden-size", type=int, default=512, help="LSTM 은닉 크기(학습과 동일)")
     parser.add_argument("--num-layers", type=int, default=2, help="LSTM 레이어 수(학습과 동일)")
-    parser.add_argument("--dropout", type=float, default=0.1, help="드롭아웃(학습과 동일)")
+    parser.add_argument("--dropout", type=float, default=0.3, help="드롭아웃(학습과 동일)")
     # 출력 필터링 및 로그.
     parser.add_argument("--top-k", type=int, default=100, help="확률 상위 K개")
     parser.add_argument("--min-prob", type=float, default=None, help="확률 하한 필터")
@@ -142,8 +140,6 @@ def main() -> None:
         if not codes:
             raise RuntimeError("no codes loaded from database")
     print(f"loaded codes={len(codes)}")
-
-    cutoff_date = get_cutoff_date(args.table, args.start_date, args.end_date, args.val_ratio)
 
     conn = mysql.connector.connect(**static.db_config_jp)
     try:

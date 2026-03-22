@@ -10,8 +10,6 @@ services:
       JOB_CMD_JP: "python dataset_jp.py && python predict_jp.py --model /models/model_jp.pt --save-db"
       JOB_CMD_KR: "python dataset_kr.py && python predict_kr.py --model /models/model_kr.pt --save-db"
       CRON_LOG_PATH: "/data/log/cron.log"
-      NVIDIA_VISIBLE_DEVICES: "all"
-      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     volumes:
       - ./config.ini:/app/config.ini:ro
       - /root/stock/models:/models:ro

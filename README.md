@@ -219,13 +219,14 @@ docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.
 ## 모델 학습 (JP)
 
 JP 모델은 향후 N 거래일 내 지정한 상승률 이상을 달성할 확률을 예측합니다.
-기본 타깃: "5일 내 +10% 이상 상승".
+기본 타깃: "10일 내 +5% 이상 상승", 기간 내 최대 낙폭 허용치 5%.
 
 ```bash
-python model_jp.py --seq-len 60 --horizon-days 5 --rise-threshold 0.10 --epochs 30 --log-codes
+python model_jp.py --seq-len 60 --horizon-days 10 --rise-threshold 0.05 --epochs 30 --log-codes
 ```
 
 모델 출력 파일: 현재 작업 폴더에 `model_jp.pt`로 저장됩니다.
+현재 구현은 epoch마다 동일 파일명을 덮어써 저장합니다.
 
 유용한 옵션:
 
@@ -233,13 +234,14 @@ python model_jp.py --seq-len 60 --horizon-days 5 --rise-threshold 0.10 --epochs 
 python model_jp.py --model-out d:\stock\StockSearcher\models\model_jp.pt
 python model_jp.py --pos-weight 3.0
 python model_jp.py --clip-grad-norm 1.0
-python model_jp.py --use-focal-loss --focal-gamma 2.0
+python model_jp.py --no-use-focal-loss
 ```
 
-prec/rec 하락 시 pos-weight를 자동으로 조정하고 연속 하락이면 종료하려면:
+기본값으로 focal loss와 adaptive pos-weight가 활성화되어 있습니다. 끄려면:
 
 ```bash
-python model_jp.py --adaptive-pos-weight --pos-weight-step 0.1 --drop-patience 3
+python model_jp.py --no-adaptive-pos-weight
+python model_jp.py --no-use-focal-loss
 ```
 
 기존 모델 이어서 학습하려면 `--resume`을 사용하세요.
@@ -253,17 +255,18 @@ python model_jp.py --resume d:\stock\shared_models\model_jp.pt --epochs 10 --mod
 KR 모델은 JP와 동일한 방식으로 학습합니다.
 
 ```bash
-python model_kr.py --seq-len 60 --horizon-days 5 --rise-threshold 0.10 --epochs 30 --log-codes
+python model_kr.py --seq-len 60 --horizon-days 10 --rise-threshold 0.05 --epochs 30 --log-codes
 ```
 
 모델 출력 파일: 현재 작업 폴더에 `model_kr.pt`로 저장됩니다.
+현재 구현은 epoch마다 동일 파일명을 덮어써 저장합니다.
 
-prec/rec 하락 시 pos-weight를 자동으로 조정하고 연속 하락이면 종료하려면:
+기본값으로 focal loss와 adaptive pos-weight가 활성화되어 있습니다. 끄려면:
 
 ```bash
-python model_kr.py --adaptive-pos-weight --pos-weight-step 0.1 --drop-patience 3
+python model_kr.py --no-adaptive-pos-weight
+python model_kr.py --no-use-focal-loss
 python model_kr.py --clip-grad-norm 1.0
-python model_kr.py --use-focal-loss --focal-gamma 2.0
 ```
 
 기존 모델 이어서 학습하려면 `--resume`을 사용하세요.
@@ -274,7 +277,7 @@ python model_kr.py --resume d:\stock\shared_models\model_kr.pt --epochs 10 --mod
 
 ## 추론 (JP)
 
-특정 날짜 기준으로 상위 확률 종목을 출력합니다. `--as-of`가 2025-01-20이면 2025-01-19까지의 데이터로 추론합니다.
+특정 날짜 기준으로 상위 확률 종목을 출력합니다. `--as-of`가 2025-01-20이면 2025-01-20까지의 데이터로 추론합니다.
 
 ```bash
 python predict_jp.py --model model_jp.pt --seq-len 60 --as-of 2025-01-20 --top-k 20
