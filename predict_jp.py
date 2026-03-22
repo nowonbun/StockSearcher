@@ -11,11 +11,13 @@ import torch
 import function.static as static
 import mysql.connector
 from model_jp import (
+    ALL_FEATURE_COLS,
     FEATURE_COLS,
     PriceLSTM,
-    compute_feature_stats,
+    append_computed_features,
     get_cutoff_date,
     load_codes,
+    CLOSE_INDEX,
     TRANS_AMNT_INDEX,
 )
 
@@ -53,7 +55,9 @@ def _fetch_sequence(
     if len(rows) < seq_len:
         return None
     rows = rows[::-1]
-    return np.array(rows, dtype=np.float32)
+    features = np.array(rows, dtype=np.float32)
+    closes = features[:, CLOSE_INDEX]
+    return append_computed_features(features, closes)
 
 
 def predict_probs(
@@ -61,8 +65,6 @@ def predict_probs(
     table: str,
     codes: List[str],
     seq_len: int,
-    mean: np.ndarray,
-    std: np.ndarray,
     cutoff_date: str | None,
     log_every: int,
     min_trans_amnt_sum: float | None,
@@ -70,8 +72,6 @@ def predict_probs(
 ) -> List[Tuple[str, float]]:
     results: List[Tuple[str, float]] = []
     log_every = max(1, log_every)
-    mean = mean.reshape(1, 1, -1).astype(np.float32)
-    std = std.reshape(1, 1, -1).astype(np.float32)
 
     conn = mysql.connector.connect(**static.db_config_jp)
     try:
@@ -87,8 +87,12 @@ def predict_probs(
                 liq_slice = seq[-liquidity_days:, TRANS_AMNT_INDEX]
                 if float(liq_slice.sum()) < min_trans_amnt_sum:
                     continue
-            x = (seq[None, ...] - mean) / std
-            x_t = torch.from_numpy(x)
+            # 글로벌 정규화 대신 윈도우 내 z-score 정규화 (학습과 동일)
+            x = seq.copy()
+            x_mean = x.mean(axis=0, keepdims=True)
+            x_std = x.std(axis=0, keepdims=True)
+            x = (x - x_mean) / (x_std + 1e-8)
+            x_t = torch.from_numpy(x[None, ...])
             with torch.no_grad():
                 logit = model(x_t).item()
                 prob = float(torch.sigmoid(torch.tensor(logit)).item())
@@ -140,7 +144,6 @@ def main() -> None:
     print(f"loaded codes={len(codes)}")
 
     cutoff_date = get_cutoff_date(args.table, args.start_date, args.end_date, args.val_ratio)
-    mean, std = compute_feature_stats(args.table, args.start_date, args.end_date, cutoff_date)
 
     conn = mysql.connector.connect(**static.db_config_jp)
     try:
@@ -159,7 +162,7 @@ def main() -> None:
         effective_cutoff = requested_cutoff
 
     model = PriceLSTM(
-        input_size=len(FEATURE_COLS),
+        input_size=len(ALL_FEATURE_COLS),
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
         dropout=args.dropout,
@@ -172,8 +175,6 @@ def main() -> None:
         args.table,
         codes,
         args.seq_len,
-        mean,
-        std,
         effective_cutoff,
         args.log_every,
         args.min_trans_amnt_sum,
