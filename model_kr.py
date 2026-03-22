@@ -482,6 +482,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-codes", action="store_true", help="코드별 로딩 로그 출력")
     parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
     parser.add_argument("--eval-threshold", type=float, default=0.3, help="평가용 확률 임계값")
+    parser.add_argument("--pos-rate", type=float, default=None,
+                        help="실제 양성 비율 (예: 0.04). 지정 시 pos_weight를 재산출하고 bias 초기화에 사용")
     return parser.parse_args()
 
 
@@ -494,6 +496,20 @@ def main() -> None:
     print(f"loaded codes={len(codes)}")
     cutoff_date = get_cutoff_date(args.table, args.start_date, args.end_date, args.val_ratio)
     print(f"cutoff_date={cutoff_date.date()}")
+
+    # pos_rate / pos_weight 일관성 처리
+    # --pos-rate 지정 시: pos_weight를 재산출하여 bias와 손실함수 가중치를 동일 기준으로 맞춤
+    # --pos-weight만 지정 시: pos_weight에서 pos_rate를 역산
+    if args.pos_rate is not None:
+        if not (0.0 < args.pos_rate < 1.0):
+            raise ValueError(f"pos_rate must be in (0, 1), got {args.pos_rate}")
+        pos_rate_for_bias = args.pos_rate
+        args.pos_weight = (1.0 - args.pos_rate) / args.pos_rate
+        print(f"pos_rate={pos_rate_for_bias:.4f} → pos_weight 재산출={args.pos_weight:.4f}")
+    elif args.pos_weight is not None:
+        pos_rate_for_bias = 1.0 / (1.0 + args.pos_weight)
+    else:
+        pos_rate_for_bias = None
 
     train_ds = WindowIterableDataset(
         args.table,
@@ -540,15 +556,13 @@ def main() -> None:
     ).to(device)
     if args.resume:
         model.load_state_dict(torch.load(args.resume, map_location=device))
-    elif args.pos_weight is not None:
-        # pos_weight에서 예상 positive rate를 역산해 출력 레이어 bias 초기화
-        # 기본 bias=0 → sigmoid(0)=0.5로 시작하면 imbalanced 데이터에서 trivial solution(전부 0 예측)에 빠지기 쉬움
-        # bias = log(p / (1-p)), p = 1 / (1 + pos_weight)
-        pos_rate = 1.0 / (1.0 + args.pos_weight)
-        bias_init = math.log(pos_rate / (1.0 - pos_rate))
+    elif pos_rate_for_bias is not None:
+        # 출력 레이어 bias를 실제 양성 비율 기준으로 초기화
+        # bias = log(p / (1-p)) : sigmoid(bias) ≈ pos_rate → 초기 예측이 데이터 분포에 맞게 시작
+        bias_init = math.log(pos_rate_for_bias / (1.0 - pos_rate_for_bias))
         with torch.no_grad():
             model.head[-1].bias.fill_(bias_init)
-        print(f"output bias initialized to {bias_init:.4f} (pos_rate={pos_rate:.4f})")
+        print(f"output bias initialized to {bias_init:.4f} (pos_rate={pos_rate_for_bias:.4f})")
 
     train_loop(
         model,
