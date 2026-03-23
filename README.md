@@ -338,6 +338,31 @@ python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --top-k
 - `output_dir` 하위에 `log/logfile_*_YYYY-MM-DD.log` 형태로 로그가 생성됩니다.
 - 데이터베이스 적재 결과와 에러 메시지가 로그에 기록됩니다.
 
+## 모델 평가 지표 이해
+
+### Precision (정밀도) vs Recall (재현율)
+
+**Precision**: 양성으로 예측한 것 중 실제로 맞은 비율
+> "내가 오른다고 찍은 종목 중 진짜 오른 비율"
+> → 높을수록 헛다리를 덜 짚음
+
+**Recall**: 실제 양성 중 모델이 잡아낸 비율
+> "실제로 오른 종목 중 내가 맞춘 비율"
+> → 높을수록 놓치는 종목이 적음
+
+**트레이드오프 관계:**
+- threshold 높이면 → Precision↑, Recall↓ (확실한 것만 찍음, 많이 놓침)
+- threshold 낮추면 → Precision↓, Recall↑ (많이 찍음, 헛다리도 많음)
+
+**이 프로젝트 맥락에서:**
+- Precision이 중요 → 추천한 종목이 실제로 올라야 신뢰할 수 있음
+- Recall은 부차적 → 일부 좋은 종목을 놓쳐도 괜찮음
+
+**F1 Score**: Precision과 Recall의 조화평균 → 둘 다 고려한 종합 지표
+```
+F1 = 2 × (Precision × Recall) / (Precision + Recall)
+```
+
 ## 자주 묻는 질문
 
 ### Q1. SSL 또는 인증 오류가 발생합니다.
@@ -367,3 +392,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/compare_models_kr.ps
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/compare_models_kr.ps1 -Epochs 20 -ModelOutDir d:/stock/shared_models -LogDir logs -PosWeight 8.5
 ```
+
+---
+
+## 변경 이력
+
+### 2026-02-21
+
+#### 1) 예측 cutoff 로직 변경
+- 대상: `predict_kr.py`, `predict_jp.py`
+- 기존: `data_cutoff = as_of - 1일` → 변경: `data_cutoff = as_of`
+- 단, DB에 `max(date)`가 더 이르면 그 날짜로 낮춰 저장 (기존 로직 유지)
+- 목적: as_of 날짜까지 데이터를 사용해 추론하고 `data_cutoff`도 같은 날짜로 저장
+
+#### 2) 차트의 주말 공백 처리
+- 대상: `webapp.py`
+- Plotly x축에 `rangebreaks` 추가 → 주말(토~일)을 축에서 제거해 캔들 차트 빈 구간 숨김
+
+#### 3) 데이터셋 구성 요약
+- KRX: `STOCK_LIST_KR`, `STOCK_DATA_KR`, `STOCK_DATA_WEEK_KR`, `STOCK_PREDICT_KR`
+- JPX: `STOCK_LIST_JP`, `STOCK_DATA_JP`, `STOCK_DATA_WEEK_JP`, `STOCK_PREDICT_JP`
+- 일/주 단위 가격 데이터와 예측 결과 테이블을 분리해 운용

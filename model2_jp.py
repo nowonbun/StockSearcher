@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
-from typing import Iterable, List, Tuple
-
 import math
+import os
+import sys
+from datetime import datetime
+from typing import Iterable, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -15,8 +17,53 @@ from torch.utils.data import DataLoader, IterableDataset
 import function.static as static
 import mysql.connector
 
+try:
+    from tqdm import tqdm as _tqdm
+    _HAS_TQDM = True
+except ImportError:
+    _HAS_TQDM = False
 
-FEATURE_COLS = [
+
+def _prog(it, desc: str, total: int | None):
+    """콘솔(stderr)에만 진행률 출력. tqdm 미설치 시 그냥 반환."""
+    if not _HAS_TQDM:
+        return it
+    return _tqdm(it, desc=desc, total=total, file=sys.stderr, leave=False, unit="batch")
+
+
+# ── 로그 파일 출력 ─────────────────────────────────────────────────────────────
+
+class _FilteredTee:
+    """stdout을 콘솔과 로그 파일에 동시 출력. 지정 prefix 행은 파일에서 제외."""
+    _SKIP = ("[train] loading", "[val] loading")
+
+    def __init__(self, filepath: str):
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        self._file = open(filepath, "w", encoding="utf-8")
+        self._orig = sys.__stdout__
+        self._buf = ""
+
+    def write(self, text: str) -> None:
+        self._orig.write(text)
+        self._orig.flush()
+        self._buf += text
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if not any(line.startswith(p) for p in self._SKIP):
+                self._file.write(line + "\n")
+                self._file.flush()
+
+    def flush(self) -> None:
+        self._orig.flush()
+        self._file.flush()
+
+    def close(self) -> None:
+        if self._buf:
+            self._file.write(self._buf)
+        self._file.close()
+
+
+_RAW_COLS = [
     "Open",
     "High",
     "Low",
@@ -37,12 +84,23 @@ FEATURE_COLS = [
     "ADX",
 ]
 
-# DB에서 가져오는 피처 외에 코드 내에서 계산하는 파생 피처
-COMPUTED_COLS = ["RSI_14", "MACD", "MACD_signal"]
-ALL_FEATURE_COLS = FEATURE_COLS + COMPUTED_COLS
+CLOSE_INDEX = _RAW_COLS.index("Close")
+TRANS_AMNT_INDEX = _RAW_COLS.index("TransAmnt")
 
-CLOSE_INDEX = FEATURE_COLS.index("Close")
-TRANS_AMNT_INDEX = FEATURE_COLS.index("TransAmnt")
+RELATIVE_FEATURE_COLS = [
+    "ret_1d",
+    "close_vs_ma5",
+    "close_vs_ma20",
+    "close_vs_ma60",
+    "close_vs_ma240",
+    "bb_pos",
+    "hl_ratio",
+    "di_diff",
+    "adx",
+    "rsi",
+    "macd_norm",
+    "macd_sig_norm",
+]
 
 
 # ── 파생 피처 계산 ──────────────────────────────────────────────────────────────
@@ -88,21 +146,77 @@ def compute_macd(
     return macd_line, signal_line
 
 
-def append_computed_features(features: np.ndarray, closes: np.ndarray) -> np.ndarray:
-    """RSI_14, MACD, MACD_signal 컬럼을 features 배열에 추가."""
-    rsi = compute_rsi(closes).reshape(-1, 1)
-    macd_line, signal_line = compute_macd(closes)
-    return np.concatenate(
-        [features, rsi, macd_line.reshape(-1, 1), signal_line.reshape(-1, 1)],
+def compute_relative_features(raw: np.ndarray) -> np.ndarray:
+    """raw: (T, len(_RAW_COLS)) → (T, 12) scale-invariant relative features."""
+    T = len(raw)
+    closes = raw[:, CLOSE_INDEX].astype(np.float64)
+
+    rsi = compute_rsi(closes.astype(np.float32))
+    macd_line, signal_line = compute_macd(closes.astype(np.float32))
+
+    idx = {c: i for i, c in enumerate(_RAW_COLS)}
+
+    ret_1d = np.zeros(T, dtype=np.float32)
+    ret_1d[1:] = np.clip(
+        (closes[1:] - closes[:-1]) / (np.abs(closes[:-1]) + 1e-10),
+        -0.3, 0.3,
+    ).astype(np.float32)
+
+    def vs_ma(ma_col: str) -> np.ndarray:
+        ma = raw[:, idx[ma_col]].astype(np.float64)
+        return np.clip((closes / (ma + 1e-10)) - 1.0, -0.5, 0.5).astype(np.float32)
+
+    close_vs_ma5 = vs_ma("5MvAvg")
+    close_vs_ma20 = vs_ma("20MvAvg")
+    close_vs_ma60 = vs_ma("60MvAvg")
+    close_vs_ma240 = vs_ma("240MvAvg")
+
+    upper = raw[:, idx["UpperBand60_1"]].astype(np.float64)
+    lower = raw[:, idx["LowerBand60_1"]].astype(np.float64)
+    band_width = upper - lower
+    bb_pos = np.clip(
+        (closes - lower) / (band_width + 1e-10),
+        -1.0, 2.0,
+    ).astype(np.float32)
+
+    highs = raw[:, idx["High"]].astype(np.float64)
+    lows = raw[:, idx["Low"]].astype(np.float64)
+    hl_ratio = np.clip((highs - lows) / (closes + 1e-10), 0.0, 0.3).astype(np.float32)
+
+    di_plus = raw[:, idx["DI_plus"]].astype(np.float64)
+    di_minus = raw[:, idx["DI_minus"]].astype(np.float64)
+    di_diff = ((di_plus - di_minus) / 100.0).astype(np.float32)
+
+    adx = (raw[:, idx["ADX"]].astype(np.float32) / 100.0)
+
+    rsi_norm = (rsi / 100.0).astype(np.float32)
+
+    macd_norm = np.clip(macd_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
+    macd_sig_norm = np.clip(signal_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
+
+    out = np.stack(
+        [
+            ret_1d,
+            close_vs_ma5,
+            close_vs_ma20,
+            close_vs_ma60,
+            close_vs_ma240,
+            bb_pos,
+            hl_ratio,
+            di_diff,
+            adx,
+            rsi_norm,
+            macd_norm,
+            macd_sig_norm,
+        ],
         axis=1,
     )
+    return out.astype(np.float32)
 
 
 # ── Focal Loss ─────────────────────────────────────────────────────────────────
 
 class FocalLoss(nn.Module):
-    """극단적 클래스 불균형 환경에서 hard example에 집중하는 손실 함수."""
-
     def __init__(
         self,
         alpha: float = 1.0,
@@ -126,7 +240,7 @@ class FocalLoss(nn.Module):
 
 # ── 모델 ───────────────────────────────────────────────────────────────────────
 
-class PriceLSTM(nn.Module):
+class MeanReversionGRU(nn.Module):
     def __init__(
         self,
         input_size: int,
@@ -135,15 +249,13 @@ class PriceLSTM(nn.Module):
         dropout: float,
     ):
         super().__init__()
-        self.lstm = nn.LSTM(
+        self.gru = nn.GRU(
             input_size=input_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
             dropout=dropout if num_layers > 1 else 0.0,
             batch_first=True,
         )
-        # 시계열 내 중요 시점에 집중하는 Attention pooling
-        self.attn = nn.Linear(hidden_size, 1)
         self.head = nn.Sequential(
             nn.Linear(hidden_size, hidden_size // 2),
             nn.LayerNorm(hidden_size // 2),
@@ -153,9 +265,9 @@ class PriceLSTM(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out, _ = self.lstm(x)                       # (B, T, H)
-        context = out[:, -1, :]                     # (B, H) 마지막 타임스텝
-        return self.head(context).squeeze(-1)
+        _, h_n = self.gru(x)          # h_n: (num_layers, B, H)
+        last_hidden = h_n[-1]         # (B, H)
+        return self.head(last_hidden).squeeze(-1)
 
 
 # ── DB 헬퍼 ────────────────────────────────────────────────────────────────────
@@ -250,10 +362,10 @@ class WindowIterableDataset(IterableDataset):
 
     def __iter__(self):
         date_clause, date_params = _build_date_clause(self.start_date, self.end_date)
-        not_null = _build_not_null_clause(FEATURE_COLS)
+        not_null = _build_not_null_clause(_RAW_COLS)
         where = f"code = %s AND {date_clause} AND {not_null}"
         query = (
-            f"SELECT date, {', '.join(FEATURE_COLS)} FROM {self.table} "
+            f"SELECT date, {', '.join(_RAW_COLS)} FROM {self.table} "
             f"WHERE {where} ORDER BY date"
         )
 
@@ -270,11 +382,11 @@ class WindowIterableDataset(IterableDataset):
                         print(f"[{self.split}] loading code={code} rows={len(rows)} ({idx})")
 
                     dates = np.array([r[0] for r in rows])
-                    features = np.array([r[1:] for r in rows], dtype=np.float32)
-                    closes = features[:, CLOSE_INDEX]
+                    raw = np.array([r[1:] for r in rows], dtype=np.float32)
+                    closes = raw[:, CLOSE_INDEX]
 
-                    # 파생 피처(RSI, MACD) 계산 및 추가
-                    features = append_computed_features(features, closes)
+                    # scale-invariant 상대 피처로 변환 (z-score 정규화 불필요)
+                    features = compute_relative_features(raw)
 
                     max_start = len(features) - (self.seq_len + self.horizon_days) + 1
                     if max_start <= 0:
@@ -292,7 +404,7 @@ class WindowIterableDataset(IterableDataset):
                             continue
                         if self.min_trans_amnt_sum is not None:
                             liq_start = end_idx - self.liquidity_days + 1
-                            liq_slice = features[liq_start : end_idx + 1, TRANS_AMNT_INDEX]
+                            liq_slice = raw[liq_start : end_idx + 1, TRANS_AMNT_INDEX]
                             if float(liq_slice.sum()) < self.min_trans_amnt_sum:
                                 continue
                         future_idx = end_idx + self.horizon_days
@@ -310,13 +422,7 @@ class WindowIterableDataset(IterableDataset):
                             else 0.0
                         )
 
-                        # 글로벌 정규화 대신 윈도우 내 z-score 정규화
-                        # → 종목 간 가격 스케일 차이 문제 해소
-                        x = features[i : i + self.seq_len].copy()  # (T, F)
-                        x_mean = x.mean(axis=0, keepdims=True)
-                        x_std = x.std(axis=0, keepdims=True)
-                        x = (x - x_mean) / (x_std + 1e-8)
-
+                        x = features[i : i + self.seq_len].copy()  # (T, 12)
                         yield torch.from_numpy(x), torch.tensor(label, dtype=torch.float32)
         finally:
             conn.close()
@@ -426,6 +532,8 @@ def train_loop(
     prev_rec: float | None = None
     metric_eps = 1e-6
     drop_streak = 0
+    _prev_train_batches: int | None = None
+    _prev_val_batches: int | None = None
 
     for epoch in range(1, epochs + 1):
         criterion = build_criterion(current_weight)
@@ -433,7 +541,9 @@ def train_loop(
         model.train()
         train_loss = 0.0
         train_count = 0
-        for x, y in train_loader:
+        train_pos_sum = 0.0
+        _train_batches = 0
+        for x, y in _prog(train_loader, f"ep{epoch}/{epochs} train", _prev_train_batches):
             x, y = x.to(device), y.to(device)
             pred = model(x)
             loss = criterion(pred, y)
@@ -444,16 +554,23 @@ def train_loop(
             optimizer.step()
             train_loss += loss.item() * x.size(0)
             train_count += x.size(0)
+            train_pos_sum += y.sum().item()
+            _train_batches += 1
+        _prev_train_batches = _train_batches
         train_loss = train_loss / train_count if train_count else 0.0
+        train_pos_rate = train_pos_sum / train_count if train_count else 0.0
         scheduler.step()
+        print(f'  -> epoch={epoch} train_samples={train_count}')
 
         model.eval()
         val_loss = 0.0
         total = 0
+        val_pos_sum = 0.0
         val_probs: list[np.ndarray] = []
         val_targets: list[np.ndarray] = []
+        _val_batches = 0
         with torch.no_grad():
-            for x, y in val_loader:
+            for x, y in _prog(val_loader, f"ep{epoch}/{epochs} val  ", _prev_val_batches):
                 x, y = x.to(device), y.to(device)
                 pred = model(x)
                 loss = criterion(pred, y)
@@ -461,8 +578,13 @@ def train_loop(
                 probs = torch.sigmoid(pred)
                 val_probs.append(probs.detach().cpu().numpy())
                 val_targets.append(y.detach().cpu().numpy())
+                val_pos_sum += y.sum().item()
                 total += y.size(0)
+                _val_batches += 1
+        _prev_val_batches = _val_batches
         val_loss = val_loss / total if total else 0.0
+        val_pos_rate = val_pos_sum / total if total else 0.0
+        print(f'  -> epoch={epoch} val_samples={total}')
 
         if total:
             probs_np = np.concatenate(val_probs).astype(np.float32)
@@ -494,15 +616,19 @@ def train_loop(
 
         print(
             f'epoch={epoch} train_loss={train_loss:.6f} val_loss={val_loss:.6f} '
+            f'train_pos_rate={train_pos_rate:.4f} val_pos_rate={val_pos_rate:.4f} '
             f'acc={acc:.4f} prec={prec:.4f} rec={rec:.4f} f1={f1:.4f} '
             f'thr={eval_thr:.2f} lr={current_lr:.6f}'
             + (f' pw={current_weight:.4f}' if current_weight is not None else '')
         )
         print(f'  -> confusion tp={tp} fp={fp} fn={fn} tn={total - tp - fp - fn}')
 
-        best_f1 = max(best_f1, f1)
-        torch.save(model.state_dict(), model_out)
-        print(f'  -> saved current epoch model (epoch={epoch}, f1={f1:.4f}, best_f1={best_f1:.4f})')
+        if f1 > best_f1:
+            best_f1 = f1
+            torch.save(model.state_dict(), model_out)
+            print(f'  -> saved best model (epoch={epoch}, f1={f1:.4f}, best_f1={best_f1:.4f})')
+        else:
+            print(f'  -> not saved (epoch={epoch}, f1={f1:.4f}, best_f1={best_f1:.4f})')
 
         drop_any = (
             prev_prec is not None
@@ -511,8 +637,6 @@ def train_loop(
         )
         if adaptive_pos_weight and drop_any and current_weight is not None:
             drop_streak += 1
-            # precision drop -> over-predicting positives -> decrease pos_weight
-            # recall drop    -> under-predicting positives -> increase pos_weight
             if prec < prev_prec - metric_eps:
                 current_weight *= (1.0 - pos_weight_step)
             else:
@@ -532,6 +656,7 @@ def train_loop(
         prev_prec = prec
         prev_rec = rec
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     # 데이터 범위
@@ -548,18 +673,18 @@ def parse_args() -> argparse.Namespace:
     # 학습/검증 분리
     parser.add_argument("--val-ratio", type=float, default=0.2, help="날짜 기준 검증 비율")
     # 학습 루프
-    parser.add_argument("--batch-size", type=int, default=2048, help="배치 크기")
+    parser.add_argument("--batch-size", type=int, default=256, help="batch size")
     parser.add_argument("--epochs", type=int, default=30, help="학습 에폭 수")
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     parser.add_argument("--clip-grad-norm", type=float, default=1.0, help="gradient clipping max norm (0=비활성)")
     # 모델 구조
-    parser.add_argument("--hidden-size", type=int, default=512, help="LSTM 은닉 크기")
-    parser.add_argument("--num-layers", type=int, default=2, help="LSTM 레이어 수")
-    parser.add_argument("--dropout", type=float, default=0.3, help="드롭아웃")
+    parser.add_argument("--hidden-size", type=int, default=128, help="GRU 은닉 크기")
+    parser.add_argument("--num-layers", type=int, default=1, help="GRU 레이어 수")
+    parser.add_argument("--dropout", type=float, default=0.2, help="드롭아웃")
     # 체크포인트 및 클래스 불균형
-    parser.add_argument("--model-out", default="model_jp.pt", help="모델 저장 경로")
+    parser.add_argument("--model-out", default="model2_jp.pt", help="모델 저장 경로")
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
-    parser.add_argument("--pos-weight", type=float, default=1.0, help="BCE pos_weight (불균형 보정). None이면 pos_rate로 자동 산출")
+    parser.add_argument("--pos-weight", type=float, default=None, help="BCE pos_weight")
     parser.add_argument("--adaptive-pos-weight", action=argparse.BooleanOptionalAction, default=False, help="prec/rec 하락 시 pos_weight 적응 조정")
     parser.add_argument("--pos-weight-step", type=float, default=0.05, help="pos_weight 조정 비율 (예: 0.05 = 5%%)")
     parser.add_argument("--drop-patience", type=int, default=3, help="연속 하락 횟수로 조기 종료")
@@ -576,12 +701,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--threshold-sweep-step", type=float, default=0.05, help="threshold sweep step")
     parser.add_argument("--pos-rate", type=float, default=None,
                         help="actual positive rate; if set, recompute pos_weight and init output bias")
-    parser.add_argument("--pos-weight-max", type=float, default=8.0, help="cap pos_weight after derivation (<=0 disables cap)")
+    parser.add_argument("--pos-weight-max", type=float, default=0, help="cap pos_weight (<=0 disables)")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    _log_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "log",
+        f"model2_jp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+    )
+    _tee = _FilteredTee(_log_path)
+    sys.stdout = _tee
+    print(f"log={_log_path}")
+    print("args=" + " ".join(f"{k}={v}" for k, v in vars(args).items()))
+
     codes = load_codes(args.table, args.start_date, args.end_date)
     if not codes:
         raise RuntimeError("no codes loaded from database")
@@ -590,9 +725,12 @@ def main() -> None:
     cutoff_date = get_cutoff_date(args.table, args.start_date, args.end_date, args.val_ratio)
     print(f"cutoff_date={cutoff_date.date()}")
 
-    # pos_rate / pos_weight 일관성 처리
-    # --pos-rate 지정 시: pos_weight를 재산출하여 bias와 손실함수 가중치를 동일 기준으로 맞춤
-    # --pos-weight만 지정 시: pos_weight에서 pos_rate를 역산
+    if args.pos_rate is not None and args.pos_weight is not None:
+        print(f"[WARN] --pos-rate is set, so --pos-weight={args.pos_weight} will be ignored")
+
+    if args.adaptive_pos_weight and args.pos_rate is None and args.pos_weight is None:
+        print("[WARN] adaptive_pos_weight=True but pos_weight is None, so adaptive adjustment is disabled")
+
     if args.pos_rate is not None:
         if not (0.0 < args.pos_rate < 1.0):
             raise ValueError(f"pos_rate must be in (0, 1), got {args.pos_rate}")
@@ -651,8 +789,8 @@ def main() -> None:
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = PriceLSTM(
-        input_size=len(ALL_FEATURE_COLS),
+    model = MeanReversionGRU(
+        input_size=len(RELATIVE_FEATURE_COLS),
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
         dropout=args.dropout,
@@ -660,8 +798,6 @@ def main() -> None:
     if args.resume:
         model.load_state_dict(torch.load(args.resume, map_location=device, weights_only=True))
     elif pos_rate_for_bias is not None:
-        # 출력 레이어 bias를 실제 양성 비율 기준으로 초기화
-        # bias = log(p / (1-p)) : sigmoid(bias) ≈ pos_rate → 초기 예측이 데이터 분포에 맞게 시작
         bias_init = math.log(pos_rate_for_bias / (1.0 - pos_rate_for_bias))
         with torch.no_grad():
             model.head[-1].bias.fill_(bias_init)

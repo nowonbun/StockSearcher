@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
+from datetime import date
 from typing import Iterable, List, Tuple
 
 import numpy as np
@@ -10,11 +10,11 @@ import torch
 
 import function.static as static
 import mysql.connector
-from model_jp import (
-    ALL_FEATURE_COLS,
-    FEATURE_COLS,
-    PriceLSTM,
-    append_computed_features,
+from model2_kr import (
+    RELATIVE_FEATURE_COLS,
+    _RAW_COLS,
+    MeanReversionGRU,
+    compute_relative_features,
     load_codes,
     CLOSE_INDEX,
     TRANS_AMNT_INDEX,
@@ -32,17 +32,17 @@ def _fetch_sequence(
     seq_len: int,
     cutoff_date: str | None,
 ) -> np.ndarray | None:
-    not_null = _build_not_null_clause(FEATURE_COLS)
+    not_null = _build_not_null_clause(_RAW_COLS)
     if cutoff_date:
         query = (
-            f"SELECT {', '.join(FEATURE_COLS)} FROM {table} "
+            f"SELECT {', '.join(_RAW_COLS)} FROM {table} "
             f"WHERE code = %s AND date <= %s AND {not_null} "
             "ORDER BY date DESC LIMIT %s"
         )
         params: Tuple[object, ...] = (code, cutoff_date, seq_len)
     else:
         query = (
-            f"SELECT {', '.join(FEATURE_COLS)} FROM {table} "
+            f"SELECT {', '.join(_RAW_COLS)} FROM {table} "
             f"WHERE code = %s AND {not_null} "
             "ORDER BY date DESC LIMIT %s"
         )
@@ -53,10 +53,8 @@ def _fetch_sequence(
         rows = cur.fetchall()
     if len(rows) < seq_len:
         return None
-    rows = rows[::-1]
-    features = np.array(rows, dtype=np.float32)
-    closes = features[:, CLOSE_INDEX]
-    return append_computed_features(features, closes)
+    raw = np.array(rows[::-1], dtype=np.float32)  # 오래된 순으로 정렬
+    return compute_relative_features(raw)           # (T, 12) 상대 피처
 
 
 def predict_probs(
@@ -72,26 +70,43 @@ def predict_probs(
     results: List[Tuple[str, float]] = []
     log_every = max(1, log_every)
 
-    conn = mysql.connector.connect(**static.db_config_jp)
+    conn = mysql.connector.connect(**static.db_config_kr)
     try:
         for idx, code in enumerate(codes, start=1):
             if idx == 1 or idx % log_every == 0:
                 print(f"[infer] code={code} ({idx})")
+
+            # 유동성 필터: raw TransAmnt 별도 조회
+            if min_trans_amnt_sum is not None:
+                not_null = _build_not_null_clause(_RAW_COLS)
+                liq_query = (
+                    f"SELECT TransAmnt FROM {table} "
+                    f"WHERE code = %s AND {not_null} "
+                    "ORDER BY date DESC LIMIT %s"
+                )
+                if cutoff_date:
+                    liq_query = (
+                        f"SELECT TransAmnt FROM {table} "
+                        f"WHERE code = %s AND date <= %s AND {not_null} "
+                        "ORDER BY date DESC LIMIT %s"
+                    )
+                with conn.cursor() as cur:
+                    if cutoff_date:
+                        cur.execute(liq_query, (code, cutoff_date, liquidity_days))
+                    else:
+                        cur.execute(liq_query, (code, liquidity_days))
+                    liq_rows = cur.fetchall()
+                if len(liq_rows) < liquidity_days:
+                    continue
+                liq_sum = sum(float(r[0]) for r in liq_rows if r[0] is not None)
+                if liq_sum < min_trans_amnt_sum:
+                    continue
+
             seq = _fetch_sequence(conn, table, code, seq_len, cutoff_date)
             if seq is None:
                 continue
-            if min_trans_amnt_sum is not None:
-                if liquidity_days > seq_len:
-                    raise ValueError("liquidity_days cannot exceed seq_len")
-                liq_slice = seq[-liquidity_days:, TRANS_AMNT_INDEX]
-                if float(liq_slice.sum()) < min_trans_amnt_sum:
-                    continue
-            # 글로벌 정규화 대신 윈도우 내 z-score 정규화 (학습과 동일)
-            x = seq.copy()
-            x_mean = x.mean(axis=0, keepdims=True)
-            x_std = x.std(axis=0, keepdims=True)
-            x = (x - x_mean) / (x_std + 1e-8)
-            x_t = torch.from_numpy(x[None, ...])
+
+            x_t = torch.from_numpy(seq[None, ...])  # (1, T, 12)
             with torch.no_grad():
                 logit = model(x_t).item()
                 prob = float(torch.sigmoid(torch.tensor(logit)).item())
@@ -104,30 +119,25 @@ def predict_probs(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    # 데이터 범위 (통계 및 종목 목록).
-    parser.add_argument("--table", default="STOCK_DATA_JP", help="DB 테이블 이름")
-    parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
-    parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
-    # 윈도우/라벨 정의 (특징 계산 + DB 저장에 사용).
-    parser.add_argument("--seq-len", type=int, default=60, help="시퀀스 길이(일)")
-    parser.add_argument("--horizon-days", type=int, default=10, help="라벨 기준 기간(일)")
-    parser.add_argument("--rise-threshold", type=float, default=0.05, help="목표 상승률 (예: 0.05 = +5%%)")
-    parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000, help="유동성 기간 내 TransAmnt 합 최소값")
-    parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
-    # 추론 기준일/모델 선택.
+    parser.add_argument("--table", default="STOCK_DATA_KR")
+    parser.add_argument("--start-date", default=static.start_date)
+    parser.add_argument("--end-date", default=static.end_date)
+    parser.add_argument("--seq-len", type=int, default=60)
+    parser.add_argument("--horizon-days", type=int, default=10)
+    parser.add_argument("--rise-threshold", type=float, default=0.05)
+    parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000)
+    parser.add_argument("--liquidity-days", type=int, default=5)
     parser.add_argument("--as-of", default=str(date.today()), help="예측 기준일 (YYYY-MM-DD)")
-    parser.add_argument("--model", default="model_jp.pt", help="모델 경로")
-    parser.add_argument("--hidden-size", type=int, default=512, help="LSTM 은닉 크기(학습과 동일)")
-    parser.add_argument("--num-layers", type=int, default=2, help="LSTM 레이어 수(학습과 동일)")
-    parser.add_argument("--dropout", type=float, default=0.3, help="드롭아웃(학습과 동일)")
-    # 출력 필터링 및 로그.
-    parser.add_argument("--top-k", type=int, default=100, help="확률 상위 K개")
-    parser.add_argument("--min-prob", type=float, default=None, help="확률 하한 필터")
-    parser.add_argument("--decision-threshold", type=float, default=None, help="decision threshold from training; keep rows with prob >= threshold")
-    parser.add_argument("--log-every", type=int, default=200, help="코드 로그 출력 간격")
-    # DB 저장 옵션 및 단일 코드 지정.
-    parser.add_argument("--save-db", action="store_true", help="DB 저장")
-    parser.add_argument("--run-name", default=None, help="DB 저장용 태그")
+    parser.add_argument("--model", default="model2_kr.pt")
+    parser.add_argument("--hidden-size", type=int, default=128)
+    parser.add_argument("--num-layers", type=int, default=1)
+    parser.add_argument("--dropout", type=float, default=0.2)
+    parser.add_argument("--top-k", type=int, default=100)
+    parser.add_argument("--min-prob", type=float, default=None)
+    parser.add_argument("--decision-threshold", type=float, default=None)
+    parser.add_argument("--log-every", type=int, default=200)
+    parser.add_argument("--save-db", action="store_true")
+    parser.add_argument("--run-name", default=None)
     parser.add_argument("--code", default=None, help="단일 코드 예측")
     return parser.parse_args()
 
@@ -142,24 +152,20 @@ def main() -> None:
             raise RuntimeError("no codes loaded from database")
     print(f"loaded codes={len(codes)}")
 
-    conn = mysql.connector.connect(**static.db_config_jp)
+    conn = mysql.connector.connect(**static.db_config_kr)
     try:
         with conn.cursor() as cur:
             cur.execute(f"SELECT MAX(date) FROM {args.table}")
-            max_date_row = cur.fetchone()
-        max_date = max_date_row[0] if max_date_row else None
+            row = cur.fetchone()
+        max_date = row[0] if row else None
     finally:
         conn.close()
 
     requested_cutoff = pd.to_datetime(args.as_of).date().isoformat()
-    if max_date is not None:
-        max_date_str = max_date.isoformat()
-        effective_cutoff = min(requested_cutoff, max_date_str)
-    else:
-        effective_cutoff = requested_cutoff
+    effective_cutoff = min(requested_cutoff, max_date.isoformat()) if max_date else requested_cutoff
 
-    model = PriceLSTM(
-        input_size=len(ALL_FEATURE_COLS),
+    model = MeanReversionGRU(
+        input_size=len(RELATIVE_FEATURE_COLS),
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
         dropout=args.dropout,
@@ -196,6 +202,7 @@ def main() -> None:
     if not top:
         print("no results")
         return
+
     print("code,prob")
     for code, prob in top:
         print(f"{code},{prob:.6f}")
@@ -209,12 +216,12 @@ def main() -> None:
 
 def save_predictions(args: argparse.Namespace, rows: List[Tuple[str, float]]) -> None:
     data_cutoff = getattr(args, "data_cutoff", args.as_of)
-    conn = mysql.connector.connect(**static.db_config_jp)
+    conn = mysql.connector.connect(**static.db_config_kr)
     try:
         with conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO STOCK_PREDICT_JP
+                INSERT INTO STOCK_PREDICT_KR
                     (data_cutoff, code, probability, run_name, seq_len, horizon_days, rise_threshold, created_at)
                 VALUES
                     (%s, %s, %s, %s, %s, %s, %s, now())
@@ -227,20 +234,13 @@ def save_predictions(args: argparse.Namespace, rows: List[Tuple[str, float]]) ->
                     created_at = now()
                 """,
                 [
-                    (
-                        data_cutoff,
-                        code,
-                        float(prob),
-                        args.run_name,
-                        args.seq_len,
-                        args.horizon_days,
-                        args.rise_threshold,
-                    )
+                    (data_cutoff, code, float(prob), args.run_name,
+                     args.seq_len, args.horizon_days, args.rise_threshold)
                     for code, prob in rows
                 ],
             )
         conn.commit()
-        print(f"saved {len(rows)} rows to STOCK_PREDICT_JP")
+        print(f"saved {len(rows)} rows to STOCK_PREDICT_KR")
     finally:
         conn.close()
 

@@ -5,10 +5,10 @@ services:
       TZ: Asia/Seoul
       OUTPUT_DIR: "/data"
       WEB_PORT: "9999"
-      CRON_SCHEDULE_JP: "0 12,18 * * 1-5"
-      CRON_SCHEDULE_KR: "0 14,20 * * 1-5"
-      JOB_CMD_JP: "python dataset_jp.py && python predict_jp.py --model /models/model_jp.pt --save-db"
-      JOB_CMD_KR: "python dataset_kr.py && python predict_kr.py --model /models/model_kr.pt --save-db"
+      CRON_SCHEDULE_JP2: "0 12,18 * * 1-5"
+      CRON_SCHEDULE_KR2: "0 14,20 * * 1-5"
+      JOB_CMD_JP2: "python dataset_jp.py && python predict2_jp.py --model /models/model2_jp.pt --save-db"
+      JOB_CMD_KR2: "python dataset_kr.py && python predict2_kr.py --model /models/model2_kr.pt --save-db"
       CRON_LOG_PATH: "/data/log/cron.log"
     volumes:
       - ./config.ini:/app/config.ini:ro
