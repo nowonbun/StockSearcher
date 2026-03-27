@@ -86,6 +86,7 @@ _RAW_COLS = [
 
 CLOSE_INDEX = _RAW_COLS.index("Close")
 TRANS_AMNT_INDEX = _RAW_COLS.index("TransAmnt")
+VOLUME_INDEX = _RAW_COLS.index("Volume")
 
 RELATIVE_FEATURE_COLS = [
     "ret_1d",
@@ -100,6 +101,11 @@ RELATIVE_FEATURE_COLS = [
     "rsi",
     "macd_norm",
     "macd_sig_norm",
+    "vol_vs_ma5",
+    "vol_vs_ma20",
+    "vol_vs_ma60",
+    "high_52w_ratio",
+    "low_52w_ratio",
 ]
 
 
@@ -146,8 +152,17 @@ def compute_macd(
     return macd_line, signal_line
 
 
+def _vol_vs_ma(volumes: np.ndarray, window: int) -> np.ndarray:
+    T = len(volumes)
+    vol_ma = np.empty(T, dtype=np.float64)
+    cumsum = np.cumsum(volumes)
+    vol_ma[window - 1:] = (cumsum[window - 1:] - np.concatenate([[0.0], cumsum[:-(window)]])) / window
+    vol_ma[:window - 1] = vol_ma[window - 1] if T >= window else (volumes[:window - 1].mean() + 1e-10)
+    return np.clip((volumes / (vol_ma + 1e-10)) - 1.0, -3.0, 3.0).astype(np.float32)
+
+
 def compute_relative_features(raw: np.ndarray) -> np.ndarray:
-    """raw: (T, len(_RAW_COLS)) → (T, 12) scale-invariant relative features."""
+    """raw: (T, len(_RAW_COLS)) → (T, 17) scale-invariant relative features."""
     T = len(raw)
     closes = raw[:, CLOSE_INDEX].astype(np.float64)
 
@@ -194,6 +209,16 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
     macd_norm = np.clip(macd_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
     macd_sig_norm = np.clip(signal_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
 
+    volumes = raw[:, VOLUME_INDEX].astype(np.float64)
+    vol_vs_ma5 = _vol_vs_ma(volumes, 5)
+    vol_vs_ma20 = _vol_vs_ma(volumes, 20)
+    vol_vs_ma60 = _vol_vs_ma(volumes, 60)
+
+    high_52w = pd.Series(highs).rolling(252, min_periods=1).max().values
+    low_52w = pd.Series(lows).rolling(252, min_periods=1).min().values
+    high_52w_ratio = np.clip(closes / (high_52w + 1e-10), 0.0, 1.0).astype(np.float32)
+    low_52w_ratio = np.clip(closes / (low_52w + 1e-10) - 1.0, 0.0, 2.0).astype(np.float32)
+
     out = np.stack(
         [
             ret_1d,
@@ -208,6 +233,11 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
             rsi_norm,
             macd_norm,
             macd_sig_norm,
+            vol_vs_ma5,
+            vol_vs_ma20,
+            vol_vs_ma60,
+            high_52w_ratio,
+            low_52w_ratio,
         ],
         axis=1,
     )
@@ -240,57 +270,34 @@ class FocalLoss(nn.Module):
 
 # ── 모델 ───────────────────────────────────────────────────────────────────────
 
-class StockTransformer(nn.Module):
-    """
-    Transformer Encoder 기반 주가 예측 모델.
-    GRU의 마지막 hidden state 대신 전체 시퀀스에 self-attention을 적용해
-    임의 시점 간의 장거리 의존성을 직접 포착한다.
-
-    구조:
-        input_proj  : Linear(input_size → d_model)
-        pos_emb     : Learnable positional embedding (최대 2000 스텝)
-        encoder     : TransformerEncoder (Pre-LN, batch_first=True)
-        pool        : mean pooling over time dimension
-        head        : Linear → LayerNorm → ReLU → Dropout → Linear(1)
-    """
-
+class MeanReversionGRU(nn.Module):
     def __init__(
         self,
         input_size: int,
-        d_model: int,
-        nhead: int,
-        num_encoder_layers: int,
-        dim_feedforward: int,
+        hidden_size: int,
+        num_layers: int,
         dropout: float,
     ):
         super().__init__()
-        self.input_proj = nn.Linear(input_size, d_model)
-        self.pos_emb = nn.Embedding(2000, d_model)
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=nhead,
-            dim_feedforward=dim_feedforward,
-            dropout=dropout,
+        self.gru = nn.GRU(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout if num_layers > 1 else 0.0,
             batch_first=True,
-            norm_first=True,   # Pre-LayerNorm → 학습 안정성 향상
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_encoder_layers)
         self.head = nn.Sequential(
-            nn.Linear(d_model, d_model // 2),
-            nn.LayerNorm(d_model // 2),
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.LayerNorm(hidden_size // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model // 2, 1),
+            nn.Linear(hidden_size // 2, 1),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B, T, input_size)
-        B, T, _ = x.shape
-        pos = torch.arange(T, device=x.device).unsqueeze(0)  # (1, T)
-        h = self.input_proj(x) + self.pos_emb(pos)           # (B, T, d_model)
-        h = self.encoder(h)                                    # (B, T, d_model)
-        h = h.mean(dim=1)                                      # mean pooling → (B, d_model)
-        return self.head(h).squeeze(-1)                        # (B,)
+        _, h_n = self.gru(x)          # h_n: (num_layers, B, H)
+        last_hidden = h_n[-1]         # (B, H)
+        return self.head(last_hidden).squeeze(-1)
 
 
 # ── DB 헬퍼 ────────────────────────────────────────────────────────────────────
@@ -408,6 +415,7 @@ class WindowIterableDataset(IterableDataset):
                     raw = np.array([r[1:] for r in rows], dtype=np.float32)
                     closes = raw[:, CLOSE_INDEX]
 
+                    # scale-invariant 상대 피처로 변환 (z-score 정규화 불필요)
                     features = compute_relative_features(raw)
 
                     max_start = len(features) - (self.seq_len + self.horizon_days) + 1
@@ -686,10 +694,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
     parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
     # 윈도우/라벨 정의
-    parser.add_argument("--seq-len", type=int, default=120, help="시퀀스 길이(일)")
-    parser.add_argument("--horizon-days", type=int, default=5, help="라벨 기준 기간(일)")
-    parser.add_argument("--rise-threshold", type=float, default=0.03, help="목표 상승률 (예: 0.03 = +3%%)")
-    parser.add_argument("--max-drawdown", type=float, default=0.03, help="기간 내 허용 최대 낙폭")
+    parser.add_argument("--seq-len", type=int, default=60, help="시퀀스 길이(일)")
+    parser.add_argument("--horizon-days", type=int, default=10, help="라벨 기준 기간(일)")
+    parser.add_argument("--rise-threshold", type=float, default=0.05, help="목표 상승률 (예: 0.05 = +5%%)")
+    parser.add_argument("--max-drawdown", type=float, default=0.05, help="기간 내 허용 최대 낙폭")
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000, help="유동성 기간 내 TransAmnt 합 최소값")
     parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 학습/검증 분리
@@ -699,14 +707,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=30, help="학습 에폭 수")
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     parser.add_argument("--clip-grad-norm", type=float, default=1.0, help="gradient clipping max norm (0=비활성)")
-    # 모델 구조 (Transformer)
-    parser.add_argument("--d-model", type=int, default=128, help="Transformer d_model (임베딩 차원)")
-    parser.add_argument("--nhead", type=int, default=4, help="Multi-head attention 헤드 수 (d_model의 약수여야 함)")
-    parser.add_argument("--num-encoder-layers", type=int, default=2, help="Transformer Encoder 레이어 수")
-    parser.add_argument("--dim-feedforward", type=int, default=256, help="Transformer FFN 내부 차원")
+    # 모델 구조
+    parser.add_argument("--hidden-size", type=int, default=128, help="GRU 은닉 크기")
+    parser.add_argument("--num-layers", type=int, default=1, help="GRU 레이어 수")
     parser.add_argument("--dropout", type=float, default=0.2, help="드롭아웃")
     # 체크포인트 및 클래스 불균형
-    parser.add_argument("--model-out", default="model3_jp.pt", help="모델 저장 경로")
+    parser.add_argument("--model-out", default="model2_jp.pt", help="모델 저장 경로")
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
     parser.add_argument("--pos-weight", type=float, default=None, help="BCE pos_weight")
     parser.add_argument("--adaptive-pos-weight", action=argparse.BooleanOptionalAction, default=False, help="prec/rec 하락 시 pos_weight 적응 조정")
@@ -734,7 +740,7 @@ def main() -> None:
     _log_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "log",
-        f"model3_jp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+        f"model2_jp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
     )
     _tee = _FilteredTee(_log_path)
     sys.stdout = _tee
@@ -776,9 +782,6 @@ def main() -> None:
             print(f"pos_weight capped: {args.pos_weight:.4f} -> {args.pos_weight_max:.4f}")
             args.pos_weight = args.pos_weight_max
 
-    if args.d_model % args.nhead != 0:
-        raise ValueError(f"d_model({args.d_model}) must be divisible by nhead({args.nhead})")
-
     train_ds = WindowIterableDataset(
         args.table,
         codes,
@@ -816,15 +819,12 @@ def main() -> None:
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = StockTransformer(
+    model = MeanReversionGRU(
         input_size=len(RELATIVE_FEATURE_COLS),
-        d_model=args.d_model,
-        nhead=args.nhead,
-        num_encoder_layers=args.num_encoder_layers,
-        dim_feedforward=args.dim_feedforward,
+        hidden_size=args.hidden_size,
+        num_layers=args.num_layers,
         dropout=args.dropout,
     ).to(device)
-
     if args.resume:
         model.load_state_dict(torch.load(args.resume, map_location=device, weights_only=True))
     elif pos_rate_for_bias is not None:

@@ -86,6 +86,7 @@ _RAW_COLS = [
 
 CLOSE_INDEX = _RAW_COLS.index("Close")
 TRANS_AMNT_INDEX = _RAW_COLS.index("TransAmnt")
+VOLUME_INDEX = _RAW_COLS.index("Volume")
 
 RELATIVE_FEATURE_COLS = [
     "ret_1d",
@@ -100,6 +101,11 @@ RELATIVE_FEATURE_COLS = [
     "rsi",
     "macd_norm",
     "macd_sig_norm",
+    "vol_vs_ma5",
+    "vol_vs_ma20",
+    "vol_vs_ma60",
+    "high_52w_ratio",
+    "low_52w_ratio",
 ]
 
 
@@ -146,8 +152,17 @@ def compute_macd(
     return macd_line, signal_line
 
 
+def _vol_vs_ma(volumes: np.ndarray, window: int) -> np.ndarray:
+    T = len(volumes)
+    vol_ma = np.empty(T, dtype=np.float64)
+    cumsum = np.cumsum(volumes)
+    vol_ma[window - 1:] = (cumsum[window - 1:] - np.concatenate([[0.0], cumsum[:-(window)]])) / window
+    vol_ma[:window - 1] = vol_ma[window - 1] if T >= window else (volumes[:window - 1].mean() + 1e-10)
+    return np.clip((volumes / (vol_ma + 1e-10)) - 1.0, -3.0, 3.0).astype(np.float32)
+
+
 def compute_relative_features(raw: np.ndarray) -> np.ndarray:
-    """raw: (T, len(_RAW_COLS)) → (T, 12) scale-invariant relative features."""
+    """raw: (T, len(_RAW_COLS)) → (T, 17) scale-invariant relative features."""
     T = len(raw)
     closes = raw[:, CLOSE_INDEX].astype(np.float64)
 
@@ -194,6 +209,16 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
     macd_norm = np.clip(macd_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
     macd_sig_norm = np.clip(signal_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
 
+    volumes = raw[:, VOLUME_INDEX].astype(np.float64)
+    vol_vs_ma5 = _vol_vs_ma(volumes, 5)
+    vol_vs_ma20 = _vol_vs_ma(volumes, 20)
+    vol_vs_ma60 = _vol_vs_ma(volumes, 60)
+
+    high_52w = pd.Series(highs).rolling(252, min_periods=1).max().values
+    low_52w = pd.Series(lows).rolling(252, min_periods=1).min().values
+    high_52w_ratio = np.clip(closes / (high_52w + 1e-10), 0.0, 1.0).astype(np.float32)
+    low_52w_ratio = np.clip(closes / (low_52w + 1e-10) - 1.0, 0.0, 2.0).astype(np.float32)
+
     out = np.stack(
         [
             ret_1d,
@@ -208,6 +233,11 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
             rsi_norm,
             macd_norm,
             macd_sig_norm,
+            vol_vs_ma5,
+            vol_vs_ma20,
+            vol_vs_ma60,
+            high_52w_ratio,
+            low_52w_ratio,
         ],
         axis=1,
     )
@@ -664,10 +694,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
     parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
     # 윈도우/라벨 정의
-    parser.add_argument("--seq-len", type=int, default=60, help="시퀀스 길이(일)")
-    parser.add_argument("--horizon-days", type=int, default=10, help="라벨 기준 기간(일)")
+    parser.add_argument("--seq-len", type=int, default=120, help="시퀀스 길이(일)")
+    parser.add_argument("--horizon-days", type=int, default=3, help="라벨 기준 기간(일)")
     parser.add_argument("--rise-threshold", type=float, default=0.05, help="목표 상승률 (예: 0.05 = +5%%)")
-    parser.add_argument("--max-drawdown", type=float, default=0.05, help="기간 내 허용 최대 낙폭")
+    parser.add_argument("--max-drawdown", type=float, default=0.04, help="기간 내 허용 최대 낙폭")
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000, help="유동성 기간 내 TransAmnt 합 최소값")
     parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 학습/검증 분리
@@ -678,9 +708,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     parser.add_argument("--clip-grad-norm", type=float, default=1.0, help="gradient clipping max norm (0=비활성)")
     # 모델 구조
-    parser.add_argument("--hidden-size", type=int, default=128, help="GRU 은닉 크기")
+    parser.add_argument("--hidden-size", type=int, default=256, help="GRU 은닉 크기")
     parser.add_argument("--num-layers", type=int, default=1, help="GRU 레이어 수")
-    parser.add_argument("--dropout", type=float, default=0.2, help="드롭아웃")
+    parser.add_argument("--dropout", type=float, default=0.3, help="드롭아웃")
     # 체크포인트 및 클래스 불균형
     parser.add_argument("--model-out", default="model2_jp.pt", help="모델 저장 경로")
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
@@ -699,7 +729,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--threshold-sweep-start", type=float, default=0.10, help="threshold sweep start")
     parser.add_argument("--threshold-sweep-end", type=float, default=0.90, help="threshold sweep end")
     parser.add_argument("--threshold-sweep-step", type=float, default=0.05, help="threshold sweep step")
-    parser.add_argument("--pos-rate", type=float, default=None,
+    parser.add_argument("--pos-rate", type=float, default=0.0873,
                         help="actual positive rate; if set, recompute pos_weight and init output bias")
     parser.add_argument("--pos-weight-max", type=float, default=0, help="cap pos_weight (<=0 disables)")
     return parser.parse_args()

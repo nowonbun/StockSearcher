@@ -345,7 +345,7 @@ def load_codes(
 ) -> List[str]:
     date_clause, params = _build_date_clause(start_date, end_date)
     query = f"SELECT DISTINCT code FROM {table} WHERE {date_clause} ORDER BY code"
-    conn = mysql.connector.connect(**static.db_config_kr)
+    conn = mysql.connector.connect(**static.db_config_jp)
     try:
         with conn.cursor() as cur:
             cur.execute(query, params)
@@ -362,7 +362,7 @@ def get_cutoff_date(
 ) -> pd.Timestamp:
     date_clause, params = _build_date_clause(start_date, end_date)
     query = f"SELECT DISTINCT date FROM {table} WHERE {date_clause} ORDER BY date"
-    conn = mysql.connector.connect(**static.db_config_kr)
+    conn = mysql.connector.connect(**static.db_config_jp)
     try:
         with conn.cursor() as cur:
             cur.execute(query, params)
@@ -423,7 +423,7 @@ class WindowIterableDataset(IterableDataset):
             f"WHERE {where} ORDER BY date"
         )
 
-        conn = mysql.connector.connect(**static.db_config_kr)
+        conn = mysql.connector.connect(**static.db_config_jp)
         try:
             with conn.cursor() as cur:
                 for idx, code in enumerate(self.codes, start=1):
@@ -713,14 +713,14 @@ def train_loop(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     # 데이터 범위
-    parser.add_argument("--table", default="STOCK_DATA_KR", help="DB 테이블 이름")
+    parser.add_argument("--table", default="STOCK_DATA_JP", help="DB 테이블 이름")
     parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
     parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
     # 윈도우/라벨 정의
     parser.add_argument("--seq-len", type=int, default=120, help="시퀀스 길이(일)")
-    parser.add_argument("--horizon-days", type=int, default=3, help="라벨 기준 기간(일)")
-    parser.add_argument("--rise-threshold", type=float, default=0.09, help="목표 상승률 (예: 0.03 = +3%%)")
-    parser.add_argument("--max-drawdown", type=float, default=0.04, help="기간 내 허용 최대 낙폭")
+    parser.add_argument("--horizon-days", type=int, default=5, help="라벨 기준 기간(일)")
+    parser.add_argument("--rise-threshold", type=float, default=0.03, help="목표 상승률 (예: 0.03 = +3%%)")
+    parser.add_argument("--max-drawdown", type=float, default=0.03, help="기간 내 허용 최대 낙폭")
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000, help="유동성 기간 내 TransAmnt 합 최소값")
     parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
     # 학습/검증 분리
@@ -731,13 +731,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
     parser.add_argument("--clip-grad-norm", type=float, default=1.0, help="gradient clipping max norm (0=비활성)")
     # 모델 구조 (Transformer)
-    parser.add_argument("--d-model", type=int, default=256, help="Transformer d_model (임베딩 차원)")
-    parser.add_argument("--nhead", type=int, default=8, help="Multi-head attention 헤드 수 (d_model의 약수여야 함)")
-    parser.add_argument("--num-encoder-layers", type=int, default=3, help="Transformer Encoder 레이어 수")
-    parser.add_argument("--dim-feedforward", type=int, default=512, help="Transformer FFN 내부 차원")
+    parser.add_argument("--d-model", type=int, default=128, help="Transformer d_model (임베딩 차원)")
+    parser.add_argument("--nhead", type=int, default=4, help="Multi-head attention 헤드 수 (d_model의 약수여야 함)")
+    parser.add_argument("--num-encoder-layers", type=int, default=2, help="Transformer Encoder 레이어 수")
+    parser.add_argument("--dim-feedforward", type=int, default=256, help="Transformer FFN 내부 차원")
     parser.add_argument("--dropout", type=float, default=0.2, help="드롭아웃")
     # 체크포인트 및 클래스 불균형
-    parser.add_argument("--model-out", default="model3_kr.pt", help="모델 저장 경로")
+    parser.add_argument("--model-out", default="model3_jp.pt", help="모델 저장 경로")
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
     parser.add_argument("--pos-weight", type=float, default=None, help="BCE pos_weight")
     parser.add_argument("--adaptive-pos-weight", action=argparse.BooleanOptionalAction, default=False, help="prec/rec 하락 시 pos_weight 적응 조정")
@@ -754,7 +754,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--threshold-sweep-start", type=float, default=0.10, help="threshold sweep start")
     parser.add_argument("--threshold-sweep-end", type=float, default=0.90, help="threshold sweep end")
     parser.add_argument("--threshold-sweep-step", type=float, default=0.05, help="threshold sweep step")
-    parser.add_argument("--pos-rate", type=float, default=0.06,
+    parser.add_argument("--pos-rate", type=float, default=None,
                         help="actual positive rate; if set, recompute pos_weight and init output bias")
     parser.add_argument("--pos-weight-max", type=float, default=0, help="cap pos_weight (<=0 disables)")
     return parser.parse_args()
@@ -765,7 +765,7 @@ def main() -> None:
     _log_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "log",
-        f"model3_kr_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+        f"model3_jp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
     )
     _tee = _FilteredTee(_log_path)
     sys.stdout = _tee

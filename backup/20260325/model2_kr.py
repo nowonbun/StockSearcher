@@ -86,6 +86,7 @@ _RAW_COLS = [
 
 CLOSE_INDEX = _RAW_COLS.index("Close")
 TRANS_AMNT_INDEX = _RAW_COLS.index("TransAmnt")
+VOLUME_INDEX = _RAW_COLS.index("Volume")
 
 RELATIVE_FEATURE_COLS = [
     "ret_1d",
@@ -100,6 +101,11 @@ RELATIVE_FEATURE_COLS = [
     "rsi",
     "macd_norm",
     "macd_sig_norm",
+    "vol_vs_ma5",
+    "vol_vs_ma20",
+    "vol_vs_ma60",
+    "high_52w_ratio",
+    "low_52w_ratio",
 ]
 
 
@@ -146,8 +152,18 @@ def compute_macd(
     return macd_line, signal_line
 
 
+def _vol_vs_ma(volumes: np.ndarray, window: int) -> np.ndarray:
+    """거래량 / rolling_mean(거래량, window) - 1, clipped [-3, 3]."""
+    T = len(volumes)
+    vol_ma = np.empty(T, dtype=np.float64)
+    cumsum = np.cumsum(volumes)
+    vol_ma[window - 1:] = (cumsum[window - 1:] - np.concatenate([[0.0], cumsum[:-(window)]])) / window
+    vol_ma[:window - 1] = vol_ma[window - 1] if T >= window else (volumes[:window - 1].mean() + 1e-10)
+    return np.clip((volumes / (vol_ma + 1e-10)) - 1.0, -3.0, 3.0).astype(np.float32)
+
+
 def compute_relative_features(raw: np.ndarray) -> np.ndarray:
-    """raw: (T, len(_RAW_COLS)) → (T, 12) scale-invariant relative features."""
+    """raw: (T, len(_RAW_COLS)) → (T, 17) scale-invariant relative features."""
     T = len(raw)
     closes = raw[:, CLOSE_INDEX].astype(np.float64)
 
@@ -194,6 +210,16 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
     macd_norm = np.clip(macd_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
     macd_sig_norm = np.clip(signal_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
 
+    volumes = raw[:, VOLUME_INDEX].astype(np.float64)
+    vol_vs_ma5 = _vol_vs_ma(volumes, 5)
+    vol_vs_ma20 = _vol_vs_ma(volumes, 20)
+    vol_vs_ma60 = _vol_vs_ma(volumes, 60)
+
+    high_52w = pd.Series(highs).rolling(252, min_periods=1).max().values
+    low_52w = pd.Series(lows).rolling(252, min_periods=1).min().values
+    high_52w_ratio = np.clip(closes / (high_52w + 1e-10), 0.0, 1.0).astype(np.float32)
+    low_52w_ratio = np.clip(closes / (low_52w + 1e-10) - 1.0, 0.0, 2.0).astype(np.float32)
+
     out = np.stack(
         [
             ret_1d,
@@ -208,6 +234,11 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
             rsi_norm,
             macd_norm,
             macd_sig_norm,
+            vol_vs_ma5,
+            vol_vs_ma20,
+            vol_vs_ma60,
+            high_52w_ratio,
+            low_52w_ratio,
         ],
         axis=1,
     )

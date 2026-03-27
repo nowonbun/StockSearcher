@@ -10,12 +10,14 @@ import torch
 
 import function.static as static
 import mysql.connector
-from model_jp import (
+from model2_jp import (
     RELATIVE_FEATURE_COLS,
     _RAW_COLS,
-    StockTransformer,
+    MeanReversionGRU,
     compute_relative_features,
     load_codes,
+    CLOSE_INDEX,
+    TRANS_AMNT_INDEX,
 )
 
 
@@ -52,7 +54,7 @@ def _fetch_sequence(
     if len(rows) < seq_len:
         return None
     raw = np.array(rows[::-1], dtype=np.float32)  # 오래된 순으로 정렬
-    return compute_relative_features(raw)           # (T, 17) 상대 피처
+    return compute_relative_features(raw)           # (T, 12) 상대 피처
 
 
 def predict_probs(
@@ -104,7 +106,7 @@ def predict_probs(
             if seq is None:
                 continue
 
-            x_t = torch.from_numpy(seq[None, ...])  # (1, T, 17)
+            x_t = torch.from_numpy(seq[None, ...])  # (1, T, 12)
             with torch.no_grad():
                 logit = model(x_t).item()
                 prob = float(torch.sigmoid(torch.tensor(logit)).item())
@@ -120,17 +122,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--table", default="STOCK_DATA_JP")
     parser.add_argument("--start-date", default=static.start_date)
     parser.add_argument("--end-date", default=static.end_date)
-    parser.add_argument("--seq-len", type=int, default=120)
+    parser.add_argument("--seq-len", type=int, default=60)
     parser.add_argument("--horizon-days", type=int, default=10)
     parser.add_argument("--rise-threshold", type=float, default=0.05)
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000)
     parser.add_argument("--liquidity-days", type=int, default=5)
     parser.add_argument("--as-of", default=str(date.today()), help="예측 기준일 (YYYY-MM-DD)")
-    parser.add_argument("--model", default="model_jp.pt")
-    parser.add_argument("--d-model", type=int, default=256)
-    parser.add_argument("--nhead", type=int, default=8)
-    parser.add_argument("--num-encoder-layers", type=int, default=3)
-    parser.add_argument("--dim-feedforward", type=int, default=512)
+    parser.add_argument("--model", default="model2_jp.pt")
+    parser.add_argument("--hidden-size", type=int, default=128)
+    parser.add_argument("--num-layers", type=int, default=1)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--min-prob", type=float, default=None)
@@ -164,12 +164,10 @@ def main() -> None:
     requested_cutoff = pd.to_datetime(args.as_of).date().isoformat()
     effective_cutoff = min(requested_cutoff, max_date.isoformat()) if max_date else requested_cutoff
 
-    model = StockTransformer(
+    model = MeanReversionGRU(
         input_size=len(RELATIVE_FEATURE_COLS),
-        d_model=args.d_model,
-        nhead=args.nhead,
-        num_encoder_layers=args.num_encoder_layers,
-        dim_feedforward=args.dim_feedforward,
+        hidden_size=args.hidden_size,
+        num_layers=args.num_layers,
         dropout=args.dropout,
     )
     model.load_state_dict(torch.load(args.model, map_location="cpu", weights_only=True))

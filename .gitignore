@@ -14,3 +14,5 @@ backup/model_jp.pt.1
 backup/model_kr.pt.4
 config.toml
 /*.pt
+model_bk/
+RESULT_*.md
