@@ -765,7 +765,7 @@ def main() -> None:
     _log_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "log",
-        f"model3_jp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+        f"model_jp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
     )
     _tee = _FilteredTee(_log_path)
     sys.stdout = _tee

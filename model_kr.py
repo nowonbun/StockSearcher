@@ -737,7 +737,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dim-feedforward", type=int, default=512, help="Transformer FFN 내부 차원")
     parser.add_argument("--dropout", type=float, default=0.2, help="드롭아웃")
     # 체크포인트 및 클래스 불균형
-    parser.add_argument("--model-out", default="model3_kr.pt", help="모델 저장 경로")
+    parser.add_argument("--model-out", default="model_kr.pt", help="모델 저장 경로")
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
     parser.add_argument("--pos-weight", type=float, default=None, help="BCE pos_weight")
     parser.add_argument("--adaptive-pos-weight", action=argparse.BooleanOptionalAction, default=False, help="prec/rec 하락 시 pos_weight 적응 조정")
@@ -765,7 +765,7 @@ def main() -> None:
     _log_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "log",
-        f"model3_kr_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+        f"model_kr_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
     )
     _tee = _FilteredTee(_log_path)
     sys.stdout = _tee
