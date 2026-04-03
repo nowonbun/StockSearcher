@@ -106,6 +106,10 @@ RELATIVE_FEATURE_COLS = [
     "vol_vs_ma60",
     "high_52w_ratio",
     "low_52w_ratio",
+    "ma20_slope_5",
+    "ma60_slope_10",
+    "ma120_slope_20",
+    "ma_alignment",
 ]
 
 
@@ -162,8 +166,18 @@ def _vol_vs_ma(volumes: np.ndarray, window: int) -> np.ndarray:
     return np.clip((volumes / (vol_ma + 1e-10)) - 1.0, -3.0, 3.0).astype(np.float32)
 
 
+def _pct_change_over(arr: np.ndarray, periods: int, clip: tuple[float, float]) -> np.ndarray:
+    out = np.zeros(len(arr), dtype=np.float32)
+    if len(arr) <= periods:
+        return out
+    base = arr[:-periods]
+    curr = arr[periods:]
+    out[periods:] = np.clip((curr / (base + 1e-10)) - 1.0, clip[0], clip[1]).astype(np.float32)
+    return out
+
+
 def compute_relative_features(raw: np.ndarray) -> np.ndarray:
-    """raw: (T, len(_RAW_COLS)) → (T, 17) scale-invariant relative features."""
+    """raw: (T, len(_RAW_COLS)) -> (T, len(RELATIVE_FEATURE_COLS)) scale-invariant relative features."""
     T = len(raw)
     closes = raw[:, CLOSE_INDEX].astype(np.float64)
 
@@ -220,6 +234,18 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
     high_52w_ratio = np.clip(closes / (high_52w + 1e-10), 0.0, 1.0).astype(np.float32)
     low_52w_ratio = np.clip(closes / (low_52w + 1e-10) - 1.0, 0.0, 2.0).astype(np.float32)
 
+    ma20 = raw[:, idx["20MvAvg"]].astype(np.float64)
+    ma60 = raw[:, idx["60MvAvg"]].astype(np.float64)
+    ma120 = raw[:, idx["120MvAvg"]].astype(np.float64)
+    ma20_slope_5 = _pct_change_over(ma20, 5, (-0.2, 0.2))
+    ma60_slope_10 = _pct_change_over(ma60, 10, (-0.2, 0.2))
+    ma120_slope_20 = _pct_change_over(ma120, 20, (-0.2, 0.2))
+    ma_alignment = np.where(
+        (ma20 >= ma60) & (ma60 >= ma120),
+        1.0,
+        0.0,
+    ).astype(np.float32)
+
     out = np.stack(
         [
             ret_1d,
@@ -239,10 +265,27 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
             vol_vs_ma60,
             high_52w_ratio,
             low_52w_ratio,
+            ma20_slope_5,
+            ma60_slope_10,
+            ma120_slope_20,
+            ma_alignment,
         ],
         axis=1,
     )
     return out.astype(np.float32)
+
+
+def extract_trend_filter_metrics(features: np.ndarray) -> dict[str, float]:
+    latest = features[-1]
+    return {
+        "close_vs_ma20": float(latest[RELATIVE_FEATURE_COLS.index("close_vs_ma20")]),
+        "close_vs_ma60": float(latest[RELATIVE_FEATURE_COLS.index("close_vs_ma60")]),
+        "high_52w_ratio": float(latest[RELATIVE_FEATURE_COLS.index("high_52w_ratio")]),
+        "ma20_slope_5": float(latest[RELATIVE_FEATURE_COLS.index("ma20_slope_5")]),
+        "ma60_slope_10": float(latest[RELATIVE_FEATURE_COLS.index("ma60_slope_10")]),
+        "ma120_slope_20": float(latest[RELATIVE_FEATURE_COLS.index("ma120_slope_20")]),
+        "ma_alignment": float(latest[RELATIVE_FEATURE_COLS.index("ma_alignment")]),
+    }
 
 
 # ── Focal Loss ─────────────────────────────────────────────────────────────────
@@ -392,9 +435,14 @@ class WindowIterableDataset(IterableDataset):
         split: str,
         log_codes: bool,
         log_every: int,
-        max_drawdown: float = 0.03,
+        max_drawdown: float = 0.10,
         min_trans_amnt_sum: float | None = None,
         liquidity_days: int = 5,
+        trend_label_min_high_52w_ratio: float = 0.85,
+        trend_label_min_close_vs_ma20: float = -0.02,
+        trend_label_min_ma20_slope: float = -0.01,
+        trend_label_min_ma60_slope: float = -0.01,
+        trend_label_require_ma_alignment: bool = True,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -411,6 +459,11 @@ class WindowIterableDataset(IterableDataset):
         self.max_drawdown = max_drawdown
         self.min_trans_amnt_sum = min_trans_amnt_sum
         self.liquidity_days = liquidity_days
+        self.trend_label_min_high_52w_ratio = trend_label_min_high_52w_ratio
+        self.trend_label_min_close_vs_ma20 = trend_label_min_close_vs_ma20
+        self.trend_label_min_ma20_slope = trend_label_min_ma20_slope
+        self.trend_label_min_ma60_slope = trend_label_min_ma60_slope
+        self.trend_label_require_ma_alignment = trend_label_require_ma_alignment
         if self.liquidity_days > self.seq_len:
             raise ValueError("liquidity_days cannot exceed seq_len")
 
@@ -464,18 +517,28 @@ class WindowIterableDataset(IterableDataset):
                         if future_idx >= len(closes):
                             continue
                         target = base * (1.0 + self.rise_threshold)
-                        floor = base * (1.0 - self.max_drawdown)
                         window_closes = closes[end_idx + 1 : future_idx + 1]
                         if window_closes.size == 0:
                             continue
-                        label = (
-                            1.0
-                            if float(closes[future_idx]) >= target
-                            and float(window_closes.min()) >= floor
-                            else 0.0
+                        future_close = float(closes[future_idx])
+                        future_high_52w_ratio = float(features[future_idx, RELATIVE_FEATURE_COLS.index("high_52w_ratio")])
+                        future_close_vs_ma20 = float(features[future_idx, RELATIVE_FEATURE_COLS.index("close_vs_ma20")])
+                        future_ma20_slope = float(features[future_idx, RELATIVE_FEATURE_COLS.index("ma20_slope_5")])
+                        future_ma60_slope = float(features[future_idx, RELATIVE_FEATURE_COLS.index("ma60_slope_10")])
+                        future_ma_alignment = float(features[future_idx, RELATIVE_FEATURE_COLS.index("ma_alignment")])
+                        max_pullback = float(window_closes.min() / (base + 1e-10) - 1.0)
+                        is_uptrend = (
+                            future_close >= target
+                            and max_pullback >= -self.max_drawdown
+                            and future_high_52w_ratio >= self.trend_label_min_high_52w_ratio
+                            and future_close_vs_ma20 >= self.trend_label_min_close_vs_ma20
+                            and future_ma20_slope >= self.trend_label_min_ma20_slope
+                            and future_ma60_slope >= self.trend_label_min_ma60_slope
+                            and (not self.trend_label_require_ma_alignment or future_ma_alignment >= 1.0)
                         )
+                        label = 1.0 if is_uptrend else 0.0
 
-                        x = features[i : i + self.seq_len].copy()  # (T, 12)
+                        x = features[i : i + self.seq_len].copy()  # (seq_len, len(RELATIVE_FEATURE_COLS))
                         yield torch.from_numpy(x), torch.tensor(label, dtype=torch.float32)
         finally:
             conn.close()
@@ -718,11 +781,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
     # 윈도우/라벨 정의
     parser.add_argument("--seq-len", type=int, default=120, help="시퀀스 길이(일)")
-    parser.add_argument("--horizon-days", type=int, default=3, help="라벨 기준 기간(일)")
-    parser.add_argument("--rise-threshold", type=float, default=0.09, help="목표 상승률 (예: 0.03 = +3%%)")
-    parser.add_argument("--max-drawdown", type=float, default=0.04, help="기간 내 허용 최대 낙폭")
+    parser.add_argument("--horizon-days", type=int, default=20, help="라벨 기준 기간(일)")
+    parser.add_argument("--rise-threshold", type=float, default=0.12, help="목표 상승률 (예: 0.10 = +10%)")
+    parser.add_argument("--max-drawdown", type=float, default=0.10, help="기간 내 허용 최대 낙폭")
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000, help="유동성 기간 내 TransAmnt 합 최소값")
     parser.add_argument("--liquidity-days", type=int, default=5, help="TransAmnt 합 계산 기간(일)")
+    parser.add_argument("--trend-label-min-high-52w-ratio", type=float, default=0.85, help="추세 라벨에서 요구하는 52주 고점 근접 비율")
+    parser.add_argument("--trend-label-min-close-vs-ma20", type=float, default=-0.02, help="추세 라벨에서 허용하는 미래 close_vs_ma20 최저값")
+    parser.add_argument("--trend-label-min-ma20-slope", type=float, default=-0.01, help="추세 라벨에서 허용하는 미래 MA20 기울기 최저값")
+    parser.add_argument("--trend-label-min-ma60-slope", type=float, default=-0.01, help="추세 라벨에서 허용하는 미래 MA60 기울기 최저값")
+    parser.add_argument("--trend-label-require-ma-alignment", action=argparse.BooleanOptionalAction, default=True, help="추세 라벨에서 미래 정배열을 요구할지 여부")
     # 학습/검증 분리
     parser.add_argument("--val-ratio", type=float, default=0.2, help="날짜 기준 검증 비율")
     # 학습 루프
@@ -746,8 +814,7 @@ def parse_args() -> argparse.Namespace:
     # Focal Loss
     parser.add_argument("--use-focal-loss", action=argparse.BooleanOptionalAction, default=False, help="BCEWithLogitsLoss 대신 Focal Loss 사용")
     parser.add_argument("--focal-gamma", type=float, default=2.0, help="Focal Loss gamma 파라미터")
-    # 진행 로그 및 평가
-    parser.add_argument("--log-codes", action="store_true", help="코드별 로딩 로그 출력")
+    parser.add_argument("--log-codes", action=argparse.BooleanOptionalAction, default=False, help="코드별 로딩 로그 출력")
     parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
     parser.add_argument("--eval-threshold", type=float, default=0.3, help="평가용 확률 임계값")
     parser.add_argument("--auto-threshold", action=argparse.BooleanOptionalAction, default=True, help="auto-select best validation threshold by F1 sweep")
@@ -825,6 +892,11 @@ def main() -> None:
         args.max_drawdown,
         args.min_trans_amnt_sum,
         args.liquidity_days,
+        args.trend_label_min_high_52w_ratio,
+        args.trend_label_min_close_vs_ma20,
+        args.trend_label_min_ma20_slope,
+        args.trend_label_min_ma60_slope,
+        args.trend_label_require_ma_alignment,
     )
     val_ds = WindowIterableDataset(
         args.table,
@@ -841,6 +913,11 @@ def main() -> None:
         args.max_drawdown,
         args.min_trans_amnt_sum,
         args.liquidity_days,
+        args.trend_label_min_high_52w_ratio,
+        args.trend_label_min_close_vs_ma20,
+        args.trend_label_min_ma20_slope,
+        args.trend_label_min_ma60_slope,
+        args.trend_label_require_ma_alignment,
     )
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)

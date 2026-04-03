@@ -15,8 +15,13 @@ from model_kr import (
     _RAW_COLS,
     StockTransformer,
     compute_relative_features,
+    extract_trend_filter_metrics,
     load_codes,
 )
+
+DEFAULT_MODEL_KR_TREND_V1 = "model_kr.pt"
+DEFAULT_DECISION_THRESHOLD_KR_TREND_V1 = 0.45
+DEFAULT_TOP_K_KR_TREND_V1 = 30
 
 
 def _build_not_null_clause(cols: Iterable[str]) -> str:
@@ -29,7 +34,7 @@ def _fetch_sequence(
     code: str,
     seq_len: int,
     cutoff_date: str | None,
-) -> np.ndarray | None:
+) -> tuple[np.ndarray, dict[str, float]] | None:
     not_null = _build_not_null_clause(_RAW_COLS)
     if cutoff_date:
         query = (
@@ -51,8 +56,9 @@ def _fetch_sequence(
         rows = cur.fetchall()
     if len(rows) < seq_len:
         return None
-    raw = np.array(rows[::-1], dtype=np.float32)  # 오래된 순으로 정렬
-    return compute_relative_features(raw)           # (T, 17) 상대 피처
+    raw = np.array(rows[::-1], dtype=np.float32)
+    features = compute_relative_features(raw)
+    return features, extract_trend_filter_metrics(features)
 
 
 def predict_probs(
@@ -64,6 +70,13 @@ def predict_probs(
     log_every: int,
     min_trans_amnt_sum: float | None,
     liquidity_days: int,
+    require_uptrend: bool,
+    min_high_52w_ratio: float | None,
+    min_close_vs_ma20: float | None,
+    min_close_vs_ma60: float | None,
+    min_ma20_slope: float | None,
+    min_ma60_slope: float | None,
+    min_ma120_slope: float | None,
 ) -> List[Tuple[str, float]]:
     results: List[Tuple[str, float]] = []
     log_every = max(1, log_every)
@@ -100,11 +113,27 @@ def predict_probs(
                 if liq_sum < min_trans_amnt_sum:
                     continue
 
-            seq = _fetch_sequence(conn, table, code, seq_len, cutoff_date)
-            if seq is None:
+            seq_info = _fetch_sequence(conn, table, code, seq_len, cutoff_date)
+            if seq_info is None:
+                continue
+            seq, trend_metrics = seq_info
+
+            if require_uptrend and trend_metrics["ma_alignment"] < 1.0:
+                continue
+            if min_high_52w_ratio is not None and trend_metrics["high_52w_ratio"] < min_high_52w_ratio:
+                continue
+            if min_close_vs_ma20 is not None and trend_metrics["close_vs_ma20"] < min_close_vs_ma20:
+                continue
+            if min_close_vs_ma60 is not None and trend_metrics["close_vs_ma60"] < min_close_vs_ma60:
+                continue
+            if min_ma20_slope is not None and trend_metrics["ma20_slope_5"] < min_ma20_slope:
+                continue
+            if min_ma60_slope is not None and trend_metrics["ma60_slope_10"] < min_ma60_slope:
+                continue
+            if min_ma120_slope is not None and trend_metrics["ma120_slope_20"] < min_ma120_slope:
                 continue
 
-            x_t = torch.from_numpy(seq[None, ...])  # (1, T, 17)
+            x_t = torch.from_numpy(seq[None, ...])
             with torch.no_grad():
                 logit = model(x_t).item()
                 prob = float(torch.sigmoid(torch.tensor(logit)).item())
@@ -121,24 +150,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start-date", default=static.start_date)
     parser.add_argument("--end-date", default=static.end_date)
     parser.add_argument("--seq-len", type=int, default=120)
-    parser.add_argument("--horizon-days", type=int, default=3)
-    parser.add_argument("--rise-threshold", type=float, default=0.09)
+    parser.add_argument("--horizon-days", type=int, default=20)
+    parser.add_argument("--rise-threshold", type=float, default=0.12)
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000)
     parser.add_argument("--liquidity-days", type=int, default=5)
-    parser.add_argument("--as-of", default=str(date.today()), help="예측 기준일 (YYYY-MM-DD)")
-    parser.add_argument("--model", default="model3_kr.pt")
+    parser.add_argument("--as-of", default=str(date.today()), help="추론 기준일 (YYYY-MM-DD)")
+    parser.add_argument("--model", default=DEFAULT_MODEL_KR_TREND_V1)
     parser.add_argument("--d-model", type=int, default=256)
     parser.add_argument("--nhead", type=int, default=8)
     parser.add_argument("--num-encoder-layers", type=int, default=3)
     parser.add_argument("--dim-feedforward", type=int, default=512)
     parser.add_argument("--dropout", type=float, default=0.2)
-    parser.add_argument("--top-k", type=int, default=100)
+    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K_KR_TREND_V1)
+    parser.add_argument("--require-uptrend", action=argparse.BooleanOptionalAction, default=True, help="정배열 상승추세 조건 사용 여부")
+    parser.add_argument("--min-high-52w-ratio", type=float, default=0.85, help="52주 고점 근접 비율 최소값")
+    parser.add_argument("--min-close-vs-ma20", type=float, default=-0.02, help="close_vs_ma20 최소값 (model_kr.py trend label 기본값과 일치)")
+    parser.add_argument("--min-close-vs-ma60", type=float, default=None, help="close_vs_ma60 최소값 (학습 라벨 외 추가 보수 필터가 필요할 때만 사용)")
+    parser.add_argument("--min-ma20-slope", type=float, default=-0.01, help="ma20_slope_5 최소값 (model_kr.py trend label 기본값과 일치)")
+    parser.add_argument("--min-ma60-slope", type=float, default=-0.01, help="ma60_slope_10 최소값 (model_kr.py trend label 기본값과 일치)")
+    parser.add_argument("--min-ma120-slope", type=float, default=None, help="ma120_slope_20 최소값 (선택 보조 필터)")
     parser.add_argument("--min-prob", type=float, default=None)
-    parser.add_argument("--decision-threshold", type=float, default=None)
+    parser.add_argument("--decision-threshold", type=float, default=DEFAULT_DECISION_THRESHOLD_KR_TREND_V1)
     parser.add_argument("--log-every", type=int, default=200)
     parser.add_argument("--save-db", action="store_true")
     parser.add_argument("--run-name", default=None)
-    parser.add_argument("--code", default=None, help="단일 코드 예측")
+    parser.add_argument("--code", default=None, help="단일 코드 추론")
     return parser.parse_args()
 
 
@@ -184,6 +220,13 @@ def main() -> None:
         args.log_every,
         args.min_trans_amnt_sum,
         args.liquidity_days,
+        args.require_uptrend,
+        args.min_high_52w_ratio,
+        args.min_close_vs_ma20,
+        args.min_close_vs_ma60,
+        args.min_ma20_slope,
+        args.min_ma60_slope,
+        args.min_ma120_slope,
     )
     print(f"infer done: {len(results)} results")
     results.sort(key=lambda x: x[1], reverse=True)

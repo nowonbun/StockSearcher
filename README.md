@@ -151,8 +151,8 @@ services:
     environment:
       CRON_SCHEDULE_JP: "0 2 * * *"
       CRON_SCHEDULE_KR: "0 4 * * *"
-      JOB_CMD_JP: "python dataset_jp.py && python predict_jp.py --model /models/model_jp.pt --seq-len 60 --top-k 20 --save-db"
-      JOB_CMD_KR: "python dataset_kr.py && python predict_kr.py --model /models/model_kr.pt --seq-len 60 --top-k 20 --save-db"
+      JOB_CMD_JP: "python dataset_jp.py && python predict_jp.py --model /models/model_jp.pt --seq-len 120 --top-k 20 --save-db"
+      JOB_CMD_KR: "python dataset_kr.py && python predict_kr.py --model /models/model_kr.pt --seq-len 120 --top-k 20 --save-db"
       CRON_LOG_PATH: "/data/log/cron.log"
     volumes:
       - ./config.ini:/app/config.ini:ro
@@ -205,43 +205,47 @@ docker compose exec -d stocksearcher python dataset_kr.py
 #### 추론 수동 실행:
 
 ```bash
-docker compose run --rm stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --save-db
-docker compose exec stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 60 --save-db
+docker compose run --rm stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 120 --save-db
+docker compose exec stocksearcher python predict_jp.py --model /models/model_jp.pt --seq-len 120 --save-db
 ```
 
 ```bash
-docker compose run --rm stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --save-db
-docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 60 --save-db
+docker compose run --rm stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 120 --save-db
+docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.pt --seq-len 120 --save-db
 ```
 
 > 참고: `JOB_CMD_JP`/`JOB_CMD_KR`에 작은따옴표(')는 넣지 마세요. cron 파일 생성 시 충돌할 수 있습니다.
 
 ## 모델 학습 (JP)
 
-JP 모델은 향후 N 거래일 내 지정한 상승률 이상을 달성할 확률을 예측합니다.
-기본 타깃: "10일 내 +5% 이상 상승", 기간 내 최대 낙폭 허용치 5%.
+JP 모델은 향후 N 거래일 내 **상승 추세가 유지된 채 목표 수익률을 달성할 확률**을 예측합니다.
+기본 타깃: "20일 내 +8% 이상 상승", 기간 내 최대 낙폭 10% 이내, 52주 고점 근접·20/60/120일선 정배열 유지.
 
 ```bash
-python model_jp.py --seq-len 60 --horizon-days 10 --rise-threshold 0.05 --epochs 30 --log-codes
+python model_jp.py
 ```
 
-모델 출력 파일: 현재 작업 폴더에 `model_jp.pt`로 저장됩니다.
+위 기본 실행은 실험 1 기준 파라미터와 같습니다(`seq-len=120`, `horizon-days=20`, `rise-threshold=0.08`, `max-drawdown=0.10`, `epochs=30`, `log-codes=True`).
+
+모델 출력 파일 기본값은 현재 작업 폴더의 `model_jp.pt`입니다.
+실험 1 문서와 동일한 파일명(`model_jp_trend_v1.pt`)이 필요하면 `--model-out model_jp_trend_v1.pt`를 명시하세요.
 현재 구현은 epoch마다 동일 파일명을 덮어써 저장합니다.
 
 유용한 옵션:
 
 ```bash
 python model_jp.py --model-out d:\stock\StockSearcher\models\model_jp.pt
-python model_jp.py --pos-weight 3.0
-python model_jp.py --clip-grad-norm 1.0
+python model_jp.py --trend-label-min-high-52w-ratio 0.90
+python model_jp.py --trend-label-min-close-vs-ma20 0.00
+python model_jp.py --trend-label-min-ma20-slope 0.00
 python model_jp.py --no-use-focal-loss
 ```
 
-기본값으로 focal loss와 adaptive pos-weight가 활성화되어 있습니다. 끄려면:
+기본값으로 focal loss와 adaptive pos-weight는 비활성화되어 있습니다. 켜려면:
 
 ```bash
-python model_jp.py --no-adaptive-pos-weight
-python model_jp.py --no-use-focal-loss
+python model_jp.py --adaptive-pos-weight
+python model_jp.py --use-focal-loss
 ```
 
 기존 모델 이어서 학습하려면 `--resume`을 사용하세요.
@@ -252,20 +256,21 @@ python model_jp.py --resume d:\stock\shared_models\model_jp.pt --epochs 10 --mod
 
 ## 모델 학습 (KR)
 
-KR 모델은 JP와 동일한 방식으로 학습합니다.
+KR 모델도 추세 유지형 라벨을 사용합니다.
+기본 타깃: "20일 내 +12% 이상 상승", 기간 내 최대 낙폭 10% 이내, 52주 고점 근접·20/60/120일선 정배열 유지.
 
 ```bash
-python model_kr.py --seq-len 60 --horizon-days 10 --rise-threshold 0.05 --epochs 30 --log-codes
+python model_kr.py --seq-len 120 --horizon-days 20 --rise-threshold 0.12 --max-drawdown 0.10 --epochs 30 --log-codes
 ```
 
 모델 출력 파일: 현재 작업 폴더에 `model_kr.pt`로 저장됩니다.
 현재 구현은 epoch마다 동일 파일명을 덮어써 저장합니다.
 
-기본값으로 focal loss와 adaptive pos-weight가 활성화되어 있습니다. 끄려면:
+기본값으로 focal loss와 adaptive pos-weight는 비활성화되어 있습니다. 켜려면:
 
 ```bash
-python model_kr.py --no-adaptive-pos-weight
-python model_kr.py --no-use-focal-loss
+python model_kr.py --adaptive-pos-weight
+python model_kr.py --use-focal-loss
 python model_kr.py --clip-grad-norm 1.0
 ```
 
@@ -278,59 +283,62 @@ python model_kr.py --resume d:\stock\shared_models\model_kr.pt --epochs 10 --mod
 ## 추론 (JP)
 
 특정 날짜 기준으로 상위 확률 종목을 출력합니다. `--as-of`가 2025-01-20이면 2025-01-20까지의 데이터로 추론합니다.
+기본적으로 정배열 추세 필터가 활성화됩니다.
 
 ```bash
-python predict_jp.py --model model_jp.pt --seq-len 60 --as-of 2025-01-20 --top-k 20
+python predict_jp.py --model model_jp.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 \
+  --require-uptrend --min-high-52w-ratio 0.85 --min-close-vs-ma60 0.0
 ```
 
 특정 종목만 확인하려면 `--code`를 사용하세요.
 
 ```bash
-python predict_jp.py --model model_jp.pt --seq-len 60 --as-of 2025-01-20 --code 7203
+python predict_jp.py --model model_jp.pt --seq-len 120 --as-of 2025-01-20 --code 7203
 ```
 
 DB에 저장하려면 `--save-db`를 추가합니다.
 
 ```bash
-python predict_jp.py --model model_jp.pt --seq-len 60 --as-of 2025-01-20 --top-k 20 --save-db
+python predict_jp.py --model model_jp.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 --save-db
 ```
 
 ## 추론 (KR)
 
 ```bash
-python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --top-k 20
+python predict_kr.py --model model_kr.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 \
+  --require-uptrend --min-high-52w-ratio 0.85 --min-close-vs-ma60 0.0
 ```
 
-## 간단 백테스트 (예측 → 5/10일 성과)
+## 간단 백테스트 (예측 → 20/40일 성과 권장)
 
-`backtest_simple.py`는 날짜별로 예측을 만든 뒤, 실제 5/10일 수익률과 승률을 간단히 확인합니다.
+`backtest_simple.py`는 날짜별로 예측을 만든 뒤, 실제 20/40일 수익률과 승률을 확인하는 용도로 쓰는 것을 권장합니다.
 
 ```bash
 # JP 예시 (유동성 필터 포함)
 python backtest_simple.py --market jp --start-date 2023-01-01 --end-date 2025-12-31 \
-  --horizons 5,10 --date-step 5 --top-k 50 --min-trans-amnt-sum 1000000000 --liquidity-days 5
+  --horizons 20,40 --date-step 5 --top-k 50 --min-trans-amnt-sum 1000000000 --liquidity-days 5
 
 # KR 예시 (JP 기준의 10배)
 python backtest_simple.py --market kr --start-date 2023-01-01 --end-date 2025-12-31 \
-  --horizons 5,10 --date-step 5 --top-k 50 --min-trans-amnt-sum 10000000000 --liquidity-days 5
+  --horizons 20,40 --date-step 5 --top-k 50 --min-trans-amnt-sum 10000000000 --liquidity-days 5
 ```
 
 출력 포맷:
 
 ```
-as_of,count,avg_ret_5d,hit_5d,avg_ret_10d,hit_10d
+as_of,count,avg_ret_20d,hit_20d,avg_ret_40d,hit_40d
 ```
 
 특정 종목만 확인하려면 `--code`를 사용하세요.
 
 ```bash
-python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --code 005930
+python predict_kr.py --model model_kr.pt --seq-len 120 --as-of 2025-01-20 --code 005930
 ```
 
 DB에 저장하려면 `--save-db`를 추가합니다.
 
 ```bash
-python predict_kr.py --model model_kr.pt --seq-len 60 --as-of 2025-01-20 --top-k 20 --save-db
+python predict_kr.py --model model_kr.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 --save-db
 ```
 
 ## 출력 및 로그
