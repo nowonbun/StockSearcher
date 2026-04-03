@@ -124,8 +124,14 @@ def _job_cmds() -> Dict[str, str]:
         "predict_jp": jp_predict,
         "dataset_kr": "python dataset_kr.py",
         "predict_kr": kr_predict,
-        "job_jp": os.environ.get("JOB_CMD_JP", "python dataset_jp.py && python predict_jp.py"),
-        "job_kr": os.environ.get("JOB_CMD_KR", "python dataset_kr.py && python predict_kr.py"),
+        "job_jp": os.environ.get(
+            "JOB_CMD_JP",
+            os.environ.get("JOB_CMD_JP2", f"python dataset_jp.py && {jp_predict}"),
+        ),
+        "job_kr": os.environ.get(
+            "JOB_CMD_KR",
+            os.environ.get("JOB_CMD_KR2", f"python dataset_kr.py && {kr_predict}"),
+        ),
     }
 
 
@@ -1256,4 +1262,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

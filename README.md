@@ -144,6 +144,7 @@ output_dir = /data
 
 - `d:/stock/shared_models` 경로를 실제 Windows 공유 폴더로 변경하세요.
 - `JOB_CMD_JP`/`JOB_CMD_KR`는 실행할 스크립트로 바꿀 수 있습니다.
+- 구버전 환경변수명인 `CRON_SCHEDULE_JP2`/`KR2`, `JOB_CMD_JP2`/`KR2`도 하위 호환으로 읽지만, 새 설정은 `JP`/`KR` 이름을 기준으로 맞추는 것을 권장합니다.
 
 ```yaml
 services:
@@ -215,6 +216,7 @@ docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.
 ```
 
 > 참고: `JOB_CMD_JP`/`JOB_CMD_KR`에 작은따옴표(')는 넣지 마세요. cron 파일 생성 시 충돌할 수 있습니다.
+> 웹 UI 수동 실행과 cron 자동 실행이 같은 명령을 보도록 `JOB_CMD_JP`/`JOB_CMD_KR`에 `--save-db`를 포함하는 것을 권장합니다.
 
 ## 모델 학습 (JP)
 
