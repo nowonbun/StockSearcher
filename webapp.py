@@ -169,6 +169,29 @@ def _fetch_predict_dates(market: str, limit: int = 120) -> List[str]:
         conn.close()
 
 
+def _fetch_previous_trading_date(market: str) -> str | None:
+    table = _data_table(market)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT DISTINCT date
+                FROM {table}
+                ORDER BY date DESC
+                LIMIT 2
+                """
+            )
+            rows = cur.fetchall()
+            if len(rows) >= 2:
+                return rows[1][0].strftime("%Y-%m-%d")
+            if rows:
+                return rows[0][0].strftime("%Y-%m-%d")
+            return None
+    finally:
+        conn.close()
+
+
 def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
     predict_table = _predict_table(market)
     data_table = _data_table(market)
@@ -211,6 +234,73 @@ def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
                         "low": row[6],
                         "high": row[7],
                         "volume": row[8],
+                    }
+                )
+            return rows
+    finally:
+        conn.close()
+
+
+def _scanner_defaults(market: str) -> Dict[str, object]:
+    market = market.upper()
+    if market == "JP":
+        return {
+            "date": _fetch_previous_trading_date(market),
+            "close_max": 1000,
+            "trans_amnt_min": 500000000,
+        }
+    return {
+        "date": _fetch_previous_trading_date(market),
+        "close_max": 100000,
+        "trans_amnt_min": 1000000000,
+    }
+
+
+def _fetch_upperband_breakouts(
+    market: str,
+    scan_date: str,
+    trans_amnt_min: int | float,
+    close_max: int | float,
+) -> List[Dict[str, object]]:
+    data_table = _data_table(market)
+    list_table = _list_table(market)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT
+                  sd.date,
+                  sd.code,
+                  sl.name,
+                  sd.Close,
+                  sd.UpperBand60_1,
+                  sd.transAmnt,
+                  (sd.Close / NULLIF(sd.UpperBand60_1, 0)) AS upperband_ratio
+                FROM {data_table} sd
+                JOIN {list_table} sl
+                  ON sl.code = sd.code
+                WHERE sd.date = %s
+                  AND sd.Close > sd.UpperBand60_1
+                  AND sd.Close < sd.UpperBand60_1 * 1.2
+                  AND sd.transAmnt > %s
+                  AND sd.Close < %s
+                ORDER BY sd.transAmnt DESC
+                LIMIT 20
+                """,
+                (scan_date, trans_amnt_min, close_max),
+            )
+            rows = []
+            for row in cur.fetchall():
+                rows.append(
+                    {
+                        "date": row[0].strftime("%Y-%m-%d"),
+                        "code": row[1],
+                        "name": row[2],
+                        "close": row[3],
+                        "upperband60_1": row[4],
+                        "transAmnt": row[5],
+                        "upperband_ratio": row[6],
                     }
                 )
             return rows
@@ -406,6 +496,33 @@ def predict_rows(market: str, as_of: str) -> List[Dict[str, object]]:
     return _fetch_predictions(market, as_of)
 
 
+@mcp.tool()
+def scanner_rows(
+    market: str = "JP",
+    scan_date: str | None = None,
+    trans_amnt_min: float | None = None,
+    close_max: float | None = None,
+) -> List[Dict[str, object]]:
+    """Return UpperBand scanner rows for a market (KR or JP)."""
+    market = market.upper()
+    if market not in ("KR", "JP"):
+        raise ValueError("market must be KR or JP")
+    defaults = _scanner_defaults(market)
+    resolved_date = scan_date or defaults.get("date")
+    resolved_trans_amnt_min = trans_amnt_min if trans_amnt_min is not None else defaults.get("trans_amnt_min")
+    resolved_close_max = close_max if close_max is not None else defaults.get("close_max")
+    if not resolved_date:
+        raise ValueError("scan_date could not be resolved")
+    if resolved_trans_amnt_min is None or resolved_close_max is None:
+        raise ValueError("scanner defaults could not be resolved")
+    return _fetch_upperband_breakouts(
+        market=market,
+        scan_date=str(resolved_date),
+        trans_amnt_min=float(resolved_trans_amnt_min),
+        close_max=float(resolved_close_max),
+    )
+
+
 
 @app.get("/")
 def index() -> Response:
@@ -597,14 +714,27 @@ def index() -> Response:
       #predict-table tbody td:nth-child(2) {{
         cursor: pointer;
       }}
+      #scanner-table tbody td:nth-child(2) {{
+        cursor: pointer;
+      }}
       #predict-table tbody td:nth-child(2):hover {{
+        background: #1e88e5;
+        color: #fff;
+      }}
+      #scanner-table tbody td:nth-child(2):hover {{
         background: #1e88e5;
         color: #fff;
       }}
       #predict-table tbody tr.selected {{
         background: #e8f5e9;
       }}
+      #scanner-table tbody tr.selected {{
+        background: #e8f5e9;
+      }}
       #predict-table {{
+        background: #fff;
+      }}
+      #scanner-table {{
         background: #fff;
       }}
       .chart-canvas {{
@@ -633,6 +763,7 @@ def index() -> Response:
         <div class="tabs">
           <button class="tab-btn active" data-tab="batch">Batch</button>
           <button class="tab-btn" data-tab="search">Predict Search</button>
+          <button class="tab-btn" data-tab="scanner">UpperBand Scanner</button>
         </div>
 
         <div class="tab-panel active" id="tab-batch">
@@ -733,6 +864,53 @@ def index() -> Response:
         </table>
       </div>
         </div>
+
+        <div class="tab-panel" id="tab-scanner">
+          <div class="section">
+        <h2>UpperBand Scanner</h2>
+        <div class="legend-wrap">
+          <div class="form-legend">Scanner Parameters</div>
+          <div class="search-bar">
+          <div class="input-field">
+            <select id="scanner-market">
+              <option value="JP" selected>JP</option>
+              <option value="KR">KR</option>
+            </select>
+            <label>Market</label>
+          </div>
+          <div class="input-field">
+            <input id="scanner-date" type="text" placeholder="YYYY-MM-DD">
+            <label for="scanner-date">Date</label>
+          </div>
+          <div class="input-field">
+            <input id="scanner-trans-amount" type="number" step="1">
+            <label for="scanner-trans-amount">transAmnt min</label>
+          </div>
+          <div class="input-field">
+            <input id="scanner-close-max" type="number" step="0.0001">
+            <label for="scanner-close-max">Close max</label>
+          </div>
+          <div class="filter-actions">
+            <a class="btn waves-effect waves-light blue" id="scanner-search-btn">Search</a>
+          </div>
+        </div>
+        </div>
+        <table id="scanner-table" class="display" style="width:100%">
+          <thead>
+            <tr>
+              <th>date</th>
+              <th>code</th>
+              <th>name</th>
+              <th>close</th>
+              <th>upperband60_1</th>
+              <th>ratio</th>
+              <th>transAmnt</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+        </div>
       </div>
     </div>
 
@@ -759,6 +937,7 @@ def index() -> Response:
       }});
 
       let table = null;
+      let scannerTable = null;
       function formatNumber(value) {{
         if (value === null || value === undefined || value === "") return "";
         const num = Number(value);
@@ -843,6 +1022,7 @@ def index() -> Response:
             if (!rowData) return;
             const code = rowData[1];
             const asof = rowData[0];
+            const market = document.getElementById("market").value;
 
             // Close previous child row if exists
             if (openedChildRow && openedChildRow !== row) {{
@@ -875,7 +1055,7 @@ def index() -> Response:
             }}
             const renderChart = async () => {{
               if (!chartEl) return;
-              await loadChart(code, asof, chartEl);
+              await loadChart(market, code, asof, chartEl);
               if (chartEl) {{
                 Plotly.Plots.resize(chartEl);
               }}
@@ -889,10 +1069,110 @@ def index() -> Response:
         }}
       }}
 
+      async function loadScannerDefaults() {{
+        const market = document.getElementById("scanner-market").value;
+        const res = await fetch(`/api/scanner-defaults?market=${{encodeURIComponent(market)}}`);
+        const data = await res.json();
+        document.getElementById("scanner-date").value = data.date || "";
+        document.getElementById("scanner-trans-amount").value = data.trans_amnt_min ?? "";
+        document.getElementById("scanner-close-max").value = data.close_max ?? "";
+        M.updateTextFields();
+      }}
+
+      async function searchScanner() {{
+        const market = document.getElementById("scanner-market").value;
+        const scanDate = document.getElementById("scanner-date").value.trim();
+        const transAmntMin = document.getElementById("scanner-trans-amount").value.trim();
+        const closeMax = document.getElementById("scanner-close-max").value.trim();
+        if (!scanDate || !transAmntMin || !closeMax) return;
+
+        const query = new URLSearchParams({{
+          market,
+          date: scanDate,
+          trans_amnt_min: transAmntMin,
+          close_max: closeMax,
+        }});
+        const res = await fetch(`/api/scanner?${{query.toString()}}`);
+        const data = await res.json();
+        const rows = data.rows.map((r) => [
+          r.date,
+          r.code,
+          r.name,
+          formatNumber(r.close),
+          formatNumber(r.upperband60_1),
+          formatNumber(r.upperband_ratio),
+          formatNumber(r.transAmnt),
+        ]);
+
+        if (!scannerTable) {{
+          scannerTable = new DataTable("#scanner-table", {{
+            data: rows,
+            pageLength: 50,
+            order: [[6, "desc"]],
+          }});
+          let openedChildRow = null;
+          $("#scanner-table tbody").on("click", "td:nth-child(2)", async function () {{
+            const rowEl = $(this).closest("tr");
+            $("#scanner-table tbody tr").removeClass("selected");
+            rowEl.addClass("selected");
+            const row = scannerTable.row(rowEl);
+            const rowData = row.data();
+            if (!rowData) return;
+            const code = rowData[1];
+            const asof = rowData[0];
+            const rowMarket = document.getElementById("scanner-market").value;
+
+            if (openedChildRow && openedChildRow !== row) {{
+              openedChildRow.child.hide();
+              openedChildRow = null;
+            }}
+
+            if (row.child.isShown()) {{
+              row.child.hide();
+              openedChildRow = null;
+              return;
+            }}
+
+            row.child(`<div class="chart-container"><div class="chart-canvas"></div></div>`).show();
+            openedChildRow = row;
+
+            const childRow = row.child();
+            const child$ = $(childRow);
+            let chartEl = child$.find(".chart-canvas")[0];
+            if (!chartEl) {{
+              child$.html('<div class="chart-container"><div class="chart-canvas"></div></div>');
+              chartEl = child$.find(".chart-canvas")[0];
+            }}
+
+            if (chartEl) {{
+              chartEl.style.height = "540px";
+              chartEl.style.width = "100%";
+              chartEl.scrollIntoView({{ behavior: "smooth", block: "start" }});
+            }}
+            const renderChart = async () => {{
+              if (!chartEl) return;
+              await loadChart(rowMarket, code, asof, chartEl);
+              if (chartEl) {{
+                Plotly.Plots.resize(chartEl);
+              }}
+            }};
+            requestAnimationFrame(() => requestAnimationFrame(renderChart));
+          }});
+        }} else {{
+          scannerTable.clear();
+          scannerTable.rows.add(rows);
+          scannerTable.draw();
+        }}
+      }}
+
       document.getElementById("market").addEventListener("change", async () => {{
         await loadDates(true);
       }});
+      document.getElementById("scanner-market").addEventListener("change", async () => {{
+        await loadScannerDefaults();
+      }});
       document.getElementById("search-btn").addEventListener("click", searchPredicts);
+      document.getElementById("scanner-search-btn").addEventListener("click", searchScanner);
       ["open-min", "open-max", "close-min", "close-max"].forEach((id) => {{
         document.getElementById(id).addEventListener("input", () => {{
           if (table) table.draw();
@@ -908,9 +1188,9 @@ def index() -> Response:
       }});
 
       loadDates(true);
+      loadScannerDefaults();
 
-      async function loadChart(code, asof, targetEl) {{
-        const market = document.getElementById("market").value;
+      async function loadChart(market, code, asof, targetEl) {{
         const res = await fetch(`/api/series?market=${{encodeURIComponent(market)}}&code=${{encodeURIComponent(code)}}&as_of=${{encodeURIComponent(asof)}}`);
         const data = await res.json();
         const series = data.series;
@@ -1156,6 +1436,38 @@ def api_predict() -> Response:
     if not as_of:
         return Response("missing as_of", status=400)
     rows = _fetch_predictions(market, as_of)
+    payload = json.dumps({"rows": rows}, default=_json_default)
+    return Response(payload, mimetype="application/json")
+
+
+@app.get("/api/scanner-defaults")
+def api_scanner_defaults() -> Response:
+    market = request.args.get("market", "JP").upper()
+    if market not in ("KR", "JP"):
+        return Response("invalid market", status=400)
+    payload = json.dumps(_scanner_defaults(market), default=_json_default)
+    return Response(payload, mimetype="application/json")
+
+
+@app.get("/api/scanner")
+def api_scanner() -> Response:
+    market = request.args.get("market", "JP").upper()
+    scan_date = request.args.get("date", "")
+    trans_amnt_min = request.args.get("trans_amnt_min", "")
+    close_max = request.args.get("close_max", "")
+    if market not in ("KR", "JP"):
+        return Response("invalid market", status=400)
+    if not scan_date or not trans_amnt_min or not close_max:
+        return Response("missing date/trans_amnt_min/close_max", status=400)
+    try:
+        rows = _fetch_upperband_breakouts(
+            market=market,
+            scan_date=scan_date,
+            trans_amnt_min=float(trans_amnt_min),
+            close_max=float(close_max),
+        )
+    except ValueError:
+        return Response("invalid numeric parameter", status=400)
     payload = json.dumps({"rows": rows}, default=_json_default)
     return Response(payload, mimetype="application/json")
 
