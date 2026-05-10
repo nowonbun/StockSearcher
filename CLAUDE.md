@@ -109,6 +109,7 @@ period       # JP 수집 연도 단위
 | `stock_data` | `market, code, limit=2000, start_date, end_date` |
 | `list_predict_dates` | `market="KR"\|"JP", limit=120` |
 | `predict_rows` | `market, as_of` |
+| `stock_data_week` | `market, code, limit=500, start_date, end_date` |
 
 MCP 파라미터나 반환 형식 변경 시 `README.md`와 `stock-mcp.md`를 함께 갱신한다.
 
