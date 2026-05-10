@@ -254,7 +254,7 @@ def _calculate_dmi_wilder(
     return di_plus, di_minus, adx
 
 
-def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
+def build_rows_from_df(df: pd.DataFrame, allow_long_ma_null: bool = False) -> List[List[Any]]:
     """원본 DataFrame에서 지표 컬럼 생성 후, DB 적재용 행 리스트 변환.
 
     반환 스키마:
@@ -296,7 +296,8 @@ def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
     work["DI_minus"] = di_minus
     work["ADX"] = adx
 
-    # 필요한 모든 컬럼이 채워진 구간만 사용
+    # 필요한 모든 컬럼이 채워진 구간만 사용.
+    # 주봉은 장기 이동평균(120/240주)이 부족한 초기 구간도 저장할 수 있게 허용한다.
     needed = [
         "Open",
         "High",
@@ -308,8 +309,6 @@ def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
         "20MvAvg",
         "50MvAvg",
         "60MvAvg",
-        "120MvAvg",
-        "240MvAvg",
         "UpperBand60_1",
         "LowerBand60_1",
         "LowerBand60_3",
@@ -317,6 +316,8 @@ def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
         "DI_minus",
         "ADX",
     ]
+    if not allow_long_ma_null:
+        needed.extend(["120MvAvg", "240MvAvg"])
     work = work.dropna(subset=needed)
     if work.empty:
         return []
@@ -345,8 +346,8 @@ def build_rows_from_df(df: pd.DataFrame) -> List[List[Any]]:
                 float(row["20MvAvg"]),
                 float(row["50MvAvg"]),
                 float(row["60MvAvg"]),
-                float(row["120MvAvg"]),
-                float(row["240MvAvg"]),
+                float(row["120MvAvg"]) if pd.notna(row["120MvAvg"]) else None,
+                float(row["240MvAvg"]) if pd.notna(row["240MvAvg"]) else None,
                 float(row["UpperBand60_1"]),
                 float(row["LowerBand60_1"]),
                 float(row["LowerBand60_3"]),
@@ -444,11 +445,11 @@ def process_symbol(code: str, include_week: bool = False) -> None:
         weekly = df_daily.resample("W-FRI").agg(
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
         )
-        w_rows = build_rows_from_df(weekly)
+        w_rows = build_rows_from_df(weekly, allow_long_ma_null=True)
         insert_rows("STOCK_DATA_WEEK_KR", code, w_rows)
 
 
-def main(include_week: bool = False) -> None:
+def main(include_week: bool = True) -> None:
     global _LOGGER
     common.check_directory(static.dir)
     common.check_directory(os.path.join(static.dir, "log"))
@@ -467,4 +468,3 @@ def main(include_week: bool = False) -> None:
 
 if __name__ == "__main__":
     main()
-

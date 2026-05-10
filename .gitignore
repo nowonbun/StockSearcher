@@ -16,3 +16,5 @@ config.toml
 /*.pt
 model_bk/
 webapp/templates_c
+/.claude
+.claude/settings.local.json
