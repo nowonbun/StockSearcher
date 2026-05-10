@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_KR (
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
     KEY idx_stock_data_kr_date (date),
+    KEY idx_stock_data_kr_date_trans (date, TransAmnt),
     CONSTRAINT fk_stock_data_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
         ON UPDATE CASCADE
         ON DELETE CASCADE
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_KR (
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
     KEY idx_stock_data_week_kr_date (date),
+    KEY idx_stock_data_week_kr_date_trans (date, TransAmnt),
     CONSTRAINT fk_stock_data_week_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
         ON UPDATE CASCADE
         ON DELETE CASCADE
@@ -150,6 +152,7 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_JP (
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
     KEY idx_stock_data_jp_date (date),
+    KEY idx_stock_data_jp_date_trans (date, TransAmnt),
     CONSTRAINT fk_stock_data_jp_list FOREIGN KEY (code) REFERENCES STOCK_LIST_JP (code)
         ON UPDATE CASCADE
         ON DELETE CASCADE
@@ -178,6 +181,7 @@ CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_JP (
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
     KEY idx_stock_data_week_jp_date (date),
+    KEY idx_stock_data_week_jp_date_trans (date, TransAmnt),
     CONSTRAINT fk_stock_data_week_jp_list FOREIGN KEY (code) REFERENCES STOCK_LIST_JP (code)
         ON UPDATE CASCADE
         ON DELETE CASCADE

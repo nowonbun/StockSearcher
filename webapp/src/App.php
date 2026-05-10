@@ -33,6 +33,14 @@ final class App
             $this->json(['rows' => $this->fetchPredictions($market, $asOf)]);
             return;
         }
+        if ($method === 'GET' && $path === '/api/scanner-dates') {
+            $this->json(['dates' => $this->fetchScannerDates($this->market('JP'))]);
+            return;
+        }
+        if ($method === 'GET' && $path === '/api/scanner-weekly-dates') {
+            $this->json(['dates' => $this->fetchScannerWeeklyDates($this->market('JP'))]);
+            return;
+        }
         if ($method === 'GET' && $path === '/api/scanner-defaults') {
             $this->json($this->scannerDefaults($this->market('JP')));
             return;
@@ -218,12 +226,12 @@ final class App
             SELECT p.data_cutoff,p.code,l.name,p.probability,d.Open,d.Close,d.Low,d.High,d.Volume
             FROM {$this->predictTable($market)} p
             JOIN {$this->listTable($market)} l ON l.code = p.code
-            JOIN {$this->dataTable($market)} d ON d.code = p.code AND d.date = p.data_cutoff
+            JOIN {$this->dataTable($market)} d ON d.code = p.code AND d.date = :as_of2
             WHERE p.data_cutoff = :as_of
             ORDER BY p.probability DESC
         ";
         $st = $pdo->prepare($sql);
-        $st->execute([':as_of' => $asOf]);
+        $st->execute([':as_of' => $asOf, ':as_of2' => $asOf]);
         $rows = [];
         foreach ($st->fetchAll() as $r) {
             $rows[] = [
@@ -239,11 +247,39 @@ final class App
     private function previousTradingDate(string $market): ?string
     {
         $pdo = $this->pdo($market);
-        $sql = "SELECT DISTINCT date FROM {$this->dataTable($market)} ORDER BY date DESC LIMIT 2";
+        $sql = "SELECT DISTINCT date FROM {$this->dataTable($market)} WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) ORDER BY date DESC LIMIT 30";
         $rows = $pdo->query($sql)->fetchAll();
         if (count($rows) >= 2) return substr((string)$rows[1]['date'], 0, 10);
         if (count($rows) === 1) return substr((string)$rows[0]['date'], 0, 10);
         return null;
+    }
+
+    // 날짜 목록 조회 기준 종목 (JP: 도요타 7203, KR: 삼성전자 005930)
+    private function anchorCode(string $market): string
+    {
+        return $market === 'JP' ? '7203' : '005930';
+    }
+
+    private function fetchScannerDates(string $market, int $limit = 120): array
+    {
+        $pdo = $this->pdo($market);
+        $sql = "SELECT date FROM {$this->dataTable($market)} WHERE code = :code ORDER BY date DESC LIMIT :limit";
+        $st = $pdo->prepare($sql);
+        $st->bindValue(':code', $this->anchorCode($market));
+        $st->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $st->execute();
+        return array_map(static fn(array $r): string => substr((string)$r['date'], 0, 10), $st->fetchAll());
+    }
+
+    private function fetchScannerWeeklyDates(string $market, int $limit = 120): array
+    {
+        $pdo = $this->pdo($market);
+        $sql = "SELECT date FROM {$this->weeklyDataTable($market)} WHERE code = :code ORDER BY date DESC LIMIT :limit";
+        $st = $pdo->prepare($sql);
+        $st->bindValue(':code', $this->anchorCode($market));
+        $st->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $st->execute();
+        return array_map(static fn(array $r): string => substr((string)$r['date'], 0, 10), $st->fetchAll());
     }
 
     private function scannerDefaults(string $market): array
@@ -271,12 +307,12 @@ final class App
             SELECT p.data_cutoff,p.code,l.name,p.probability,d.Open,d.Close,d.Low,d.High,d.Volume
             FROM {$this->weeklyPredictTable($market)} p
             JOIN {$this->listTable($market)} l ON l.code = p.code
-            JOIN {$this->weeklyDataTable($market)} d ON d.code = p.code AND d.date = p.data_cutoff
+            JOIN {$this->weeklyDataTable($market)} d ON d.code = p.code AND d.date = :as_of2
             WHERE p.data_cutoff = :as_of
             ORDER BY p.probability DESC
         ";
         $st = $pdo->prepare($sql);
-        $st->execute([':as_of' => $asOf]);
+        $st->execute([':as_of' => $asOf, ':as_of2' => $asOf]);
         $rows = [];
         foreach ($st->fetchAll() as $r) {
             $rows[] = [
@@ -292,7 +328,7 @@ final class App
     private function previousWeeklyDate(string $market): ?string
     {
         $pdo = $this->pdo($market);
-        $sql = "SELECT DISTINCT date FROM {$this->weeklyDataTable($market)} ORDER BY date DESC LIMIT 2";
+        $sql = "SELECT DISTINCT date FROM {$this->weeklyDataTable($market)} WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) ORDER BY date DESC LIMIT 30";
         $rows = $pdo->query($sql)->fetchAll();
         if (count($rows) >= 2) return substr((string)$rows[1]['date'], 0, 10);
         if (count($rows) === 1) return substr((string)$rows[0]['date'], 0, 10);
