@@ -372,7 +372,7 @@ def process_symbol(
     insert_rows(table, code, rows, db_config, include_lowerband60_3)
 
 
-def main(include_week: bool = False) -> None:
+def main(include_week: bool = True) -> None:
     global _LOGGER
     common.check_directory(static.dir)
     common.check_directory(os.path.join(static.dir, "log"))

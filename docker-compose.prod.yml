@@ -1,6 +1,6 @@
 services:
   stocksearcher:
-    build: .
+    image: ghcr.io/nowonbun/stocksearcher:latest
     environment:
       TZ: Asia/Seoul
       OUTPUT_DIR: "/data"
@@ -19,24 +19,14 @@ services:
     restart: unless-stopped
 
   stocksearcher-php:
-    build:
-      context: .
-      dockerfile: webapp/Dockerfile
+    image: ghcr.io/nowonbun/stocksearcher-php:latest
     environment:
       APP_ENV: "production"
       APP_TZ: "Asia/Seoul"
       PYTHON_API_URL: "http://stocksearcher:9999"
       LOG_DIR: "/data/log"
     volumes:
-      - ./config.ini:/app/config.ini:ro
-      - /root/stock/models:/models:ro
       - /root/stock/data:/data
-      - ./webapp/public:/app/webapp/public
-      - ./webapp/src:/app/webapp/src
-      - ./webapp/templates:/app/webapp/templates
-      - ./webapp/templates_c:/app/webapp/templates_c
-      - ./webapp/cache:/app/webapp/cache
-      - ./webapp/config:/app/webapp/config
     ports:
       - "9998:80"
     restart: unless-stopped
