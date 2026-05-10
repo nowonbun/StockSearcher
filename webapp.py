@@ -245,8 +245,9 @@ def _fetch_previous_trading_date(market: str) -> str | None:
                 f"""
                 SELECT DISTINCT date
                 FROM {table}
+                WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                 ORDER BY date DESC
-                LIMIT 2
+                LIMIT 30
                 """
             )
             rows = cur.fetchall()

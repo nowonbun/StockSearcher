@@ -445,6 +445,7 @@ def process_symbol(code: str, include_week: bool = False) -> None:
         weekly = df_daily.resample("W-FRI").agg(
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
         )
+        weekly = weekly.dropna(subset=["Close"])  # 공휴일 등 거래 없는 주 제거 (ADX 스무딩 오염 방지)
         w_rows = build_rows_from_df(weekly, allow_long_ma_null=True)
         insert_rows("STOCK_DATA_WEEK_KR", code, w_rows)
 

@@ -482,8 +482,8 @@
         <div class="search-form">
           <div class="row" style="margin-bottom: 0">
             <div class="input-field col s12 m4">
-              <input id="scanner-jp-date" type="text">
-              <label for="scanner-jp-date">Date</label>
+              <select id="scanner-jp-date"></select>
+              <label>Date</label>
             </div>
             <div class="input-field col s12 m3">
               <input id="scanner-jp-trans-amount" type="text">
@@ -508,8 +508,8 @@
         <div class="search-form">
           <div class="row" style="margin-bottom: 0">
             <div class="input-field col s12 m4">
-              <input id="scanner-kr-date" type="text">
-              <label for="scanner-kr-date">Date</label>
+              <select id="scanner-kr-date"></select>
+              <label>Date</label>
             </div>
             <div class="input-field col s12 m3">
               <input id="scanner-kr-trans-amount" type="text">
@@ -638,8 +638,8 @@
         <div class="search-form">
           <div class="row" style="margin-bottom: 0">
             <div class="input-field col s12 m4">
-              <input id="scanner-w-jp-date" type="text">
-              <label for="scanner-w-jp-date">Date</label>
+              <select id="scanner-w-jp-date"></select>
+              <label>Date</label>
             </div>
             <div class="input-field col s12 m3">
               <input id="scanner-w-jp-trans-amount" type="text">
@@ -664,8 +664,8 @@
         <div class="search-form">
           <div class="row" style="margin-bottom: 0">
             <div class="input-field col s12 m4">
-              <input id="scanner-w-kr-date" type="text">
-              <label for="scanner-w-kr-date">Date</label>
+              <select id="scanner-w-kr-date"></select>
+              <label>Date</label>
             </div>
             <div class="input-field col s12 m3">
               <input id="scanner-w-kr-trans-amount" type="text">
@@ -981,7 +981,10 @@ function initScannerTabs() {
       if (targetId === 'stab-kr') {
         if (!scannerKrGrid) {
           scannerKrGrid = createScannerGrid('scanner-grid-kr', 'KR', false);
-          await loadScannerDefaults('KR', 'scanner-kr-date', 'scanner-kr-trans-amount', 'scanner-kr-close-max');
+          await Promise.all([
+            loadDates('KR', 'scanner-kr-date', '/api/scanner-dates'),
+            loadScannerDefaults('KR', 'scanner-kr-trans-amount', 'scanner-kr-close-max'),
+          ]);
         } else {
           scannerKrGrid.sizeColumnsToFit();
         }
@@ -1070,7 +1073,10 @@ function initSidebarNav() {
       if (targetId === 'panel-scanner') {
         if (!scannerJpGrid) {
           scannerJpGrid = createScannerGrid('scanner-grid-jp', 'JP', false);
-          await loadScannerDefaults('JP', 'scanner-jp-date', 'scanner-jp-trans-amount', 'scanner-jp-close-max');
+          await Promise.all([
+            loadDates('JP', 'scanner-jp-date', '/api/scanner-dates'),
+            loadScannerDefaults('JP', 'scanner-jp-trans-amount', 'scanner-jp-close-max'),
+          ]);
         } else {
           scannerJpGrid.sizeColumnsToFit();
         }
@@ -1085,8 +1091,6 @@ function initSidebarNav() {
       if (targetId === 'panel-predict-weekly') {
         if (!jpWeeklyGrid) {
           jpWeeklyGrid = createPredictGrid('predict-grid-jp-w', 'jp-w', 'JP', true);
-          const dates = await loadDates('JP', 'as-of-jp-w', '/api/predict-dates-weekly');
-          if (dates.length) await searchPredicts('JP', 'as-of-jp-w', jpWeeklyGrid, '/api/predict-weekly');
         } else {
           const activePtabW = document.querySelector('.ptab-w-panel.active');
           if (activePtabW?.id === 'ptab-w-jp') jpWeeklyGrid.sizeColumnsToFit();
@@ -1097,7 +1101,10 @@ function initSidebarNav() {
       if (targetId === 'panel-scanner-weekly') {
         if (!scannerJpWeeklyGrid) {
           scannerJpWeeklyGrid = createScannerGrid('scanner-grid-jp-w', 'JP', true);
-          await loadScannerDefaults('JP', 'scanner-w-jp-date', 'scanner-w-jp-trans-amount', 'scanner-w-jp-close-max', '/api/scanner-weekly-defaults');
+          await Promise.all([
+            loadDates('JP', 'scanner-w-jp-date', '/api/scanner-weekly-dates'),
+            loadScannerDefaults('JP', 'scanner-w-jp-trans-amount', 'scanner-w-jp-close-max', '/api/scanner-weekly-defaults'),
+          ]);
         } else {
           scannerJpWeeklyGrid.sizeColumnsToFit();
         }
@@ -1127,7 +1134,6 @@ function initPredictWeeklyTabs() {
       if (targetId === 'ptab-w-kr') {
         if (!krWeeklyGrid) {
           krWeeklyGrid = createPredictGrid('predict-grid-kr-w', 'kr-w', 'KR', true);
-          await searchPredicts('KR', 'as-of-kr-w', krWeeklyGrid, '/api/predict-weekly');
         } else {
           krWeeklyGrid.sizeColumnsToFit();
         }
@@ -1157,7 +1163,10 @@ function initScannerWeeklyTabs() {
       if (targetId === 'stab-w-kr') {
         if (!scannerKrWeeklyGrid) {
           scannerKrWeeklyGrid = createScannerGrid('scanner-grid-kr-w', 'KR', true);
-          await loadScannerDefaults('KR', 'scanner-w-kr-date', 'scanner-w-kr-trans-amount', 'scanner-w-kr-close-max', '/api/scanner-weekly-defaults');
+          await Promise.all([
+            loadDates('KR', 'scanner-w-kr-date', '/api/scanner-weekly-dates'),
+            loadScannerDefaults('KR', 'scanner-w-kr-trans-amount', 'scanner-w-kr-close-max', '/api/scanner-weekly-defaults'),
+          ]);
         } else {
           scannerKrWeeklyGrid.sizeColumnsToFit();
         }
@@ -1184,11 +1193,9 @@ function initPredictTabs() {
         jpGrid?.sizeColumnsToFit();
       }
 
-      // KR 탭: 처음 열 때 지연 초기화 후 자동 검색
       if (targetId === 'ptab-kr') {
         if (!krGrid) {
           krGrid = createPredictGrid('predict-grid-kr', 'kr', 'KR', false);
-          await searchPredicts('KR', 'as-of-kr', krGrid);
         } else {
           krGrid.sizeColumnsToFit();
         }
@@ -1198,14 +1205,13 @@ function initPredictTabs() {
 }
 
 
-// ── 스캐너 기본값 로드 ────────────────────────────────────
-async function loadScannerDefaults(market, dateId, transId, closeId, endpoint = '/api/scanner-defaults') {
+// ── 스캐너 기본값 로드 (trans_amnt_min / close_max) ──────
+async function loadScannerDefaults(market, transId, closeId, endpoint = '/api/scanner-defaults') {
   showLoading();
   try {
     const res  = await fetch(`${endpoint}?market=${encodeURIComponent(market)}`);
     const data = await res.json();
 
-    document.getElementById(dateId).value  = data.date || '';
     document.getElementById(transId).value = data.trans_amnt_min ?? '';
     document.getElementById(closeId).value = data.close_max ?? '';
     M.updateTextFields();
@@ -1219,7 +1225,7 @@ async function loadScannerDefaults(market, dateId, transId, closeId, endpoint = 
 async function searchScanner(market, dateId, transId, closeId, gridApi, endpoint = '/api/scanner') {
   if (!gridApi) return;
 
-  const date      = document.getElementById(dateId).value.trim();
+  const date      = getSelectValue(dateId);
   const transAmnt = document.getElementById(transId).value.trim();
   const closeMax  = document.getElementById(closeId).value.trim();
 
@@ -1267,17 +1273,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   showLoading();
   try {
     // 일봉/주봉 날짜 목록 병렬 로드
-    const [jpDates] = await Promise.all([
+    await Promise.all([
       loadDates('JP', 'as-of-jp'),
       loadDates('KR', 'as-of-kr'),
       loadDates('JP', 'as-of-jp-w', '/api/predict-dates-weekly'),
       loadDates('KR', 'as-of-kr-w', '/api/predict-dates-weekly'),
     ]);
-
-    // JP 자동 검색 (searchPredicts 내부에서 showLoading이 중첩됨, depth로 처리됨)
-    if (jpDates.length) {
-      await searchPredicts('JP', 'as-of-jp', jpGrid);
-    }
   } finally {
     hideLoading();
   }
