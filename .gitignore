@@ -15,3 +15,4 @@ backup/model_kr.pt.4
 config.toml
 /*.pt
 model_bk/
+webapp/templates_c

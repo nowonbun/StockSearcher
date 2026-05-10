@@ -1,0 +1,13 @@
+{
+  "name": "stocksearcher/webapp",
+  "description": "StockSearcher PHP webapp with Smarty",
+  "type": "project",
+  "require": {
+    "smarty/smarty": "^5.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "StockSearcher\\WebApp\\": "src/"
+    }
+  }
+}

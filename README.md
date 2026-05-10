@@ -115,6 +115,75 @@ python webapp.py
 - `predict_rows(market, as_of)`
   - 해당 기준일 예측 결과 조회 (`data_cutoff`, `code`, `name`, `probability`, `open`, `close`, `low`, `high`, `volume`)
 
+## GitHub Actions + 서버 자동 배포
+
+`master` 브랜치에 push하면 GitHub Actions가 Docker 이미지를 빌드해 GitHub Container Registry(ghcr.io)에 푸시하고, SSH로 서버에 접속해 자동으로 배포합니다.
+
+### 1. GitHub Secrets / Variables 설정
+
+GitHub 리포지토리 → **Settings → Secrets and variables → Actions**에서 아래를 등록합니다.
+
+| 종류 | 이름 | 값 |
+|------|------|----|
+| Secret | `DEPLOY_HOST` | 서버 IP 또는 도메인 |
+| Secret | `DEPLOY_USER` | SSH 접속 유저 (예: `root`) |
+| Secret | `DEPLOY_KEY` | SSH 개인키 전체 내용 (`-----BEGIN OPENSSH PRIVATE KEY-----` 포함) |
+| Variable | `DEPLOY_PORT` | SSH 포트 (생략 시 기본값 22) |
+
+> `GITHUB_TOKEN`은 자동 제공되므로 별도 등록 불필요합니다.
+
+### 2. 서버 초기 설정 (최초 1회)
+
+```bash
+# Docker 설치 (Ubuntu 기준)
+curl -fsSL https://get.docker.com | sh
+
+# 작업 디렉터리 및 볼륨 경로 생성
+mkdir -p /root/stock/models /root/stock/data/log
+
+# ghcr.io 로그인 (GitHub Personal Access Token, read:packages 권한 필요)
+echo "<GITHUB_PAT>" | docker login ghcr.io -u nowonbun --password-stdin
+
+# 프로덕션 compose 파일 및 config.ini 배치
+# (아래 파일을 서버 /root/stock/ 에 복사)
+scp docker-compose.prod.yml root@<서버>:/root/stock/
+scp config.ini              root@<서버>:/root/stock/
+
+# 모델 파일 배치
+scp model_jp.pt model_kr.pt model_week_jp.pt model_week_kr.pt root@<서버>:/root/stock/models/
+```
+
+### 3. 서버의 config.ini 예시
+
+```ini
+[database]
+host = <DB_HOST>
+port = 3306
+user = <DB_USER>
+password = <DB_PASS>
+database_jp = stock_dataset_jp
+database_kr = stock_dataset_kr
+
+[default]
+output_dir = /data
+start_date = 2020-01-01
+end_date = 2099-12-31
+period = 5
+```
+
+### 4. 최초 수동 기동 (또는 배포 후 확인)
+
+```bash
+cd /root/stock
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml logs -f
+```
+
+이후 `master` push 시마다 GitHub Actions가 이미지를 새로 빌드하고 서버를 자동으로 재기동합니다.
+
+---
+
 ## Docker + cron 실행
 
 JP는 새벽 2시, KR은 새벽 4시에 컨테이너 내부 cron으로 실행하도록 구성했습니다. `model_*.pt`는 Windows 공유 폴더를 마운트해서 사용합니다.

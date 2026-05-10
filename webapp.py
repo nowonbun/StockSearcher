@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 import os
 import threading
@@ -12,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import anyio
-from flask import Flask, Response, redirect, request, url_for
+from flask import Flask, Response, request
 import mysql.connector
 from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
@@ -143,237 +142,27 @@ def _db_config(market: str) -> dict:
     raise ValueError("unknown market")
 
 
-def _predict_table(market: str) -> str:
-    return "STOCK_PREDICT_JP" if market == "JP" else "STOCK_PREDICT_KR"
-
-
 def _data_table(market: str) -> str:
     return "STOCK_DATA_JP" if market == "JP" else "STOCK_DATA_KR"
+
+
+def _week_data_table(market: str) -> str:
+    return "STOCK_DATA_WEEK_JP" if market == "JP" else "STOCK_DATA_WEEK_KR"
 
 
 def _list_table(market: str) -> str:
     return "STOCK_LIST_JP" if market == "JP" else "STOCK_LIST_KR"
 
 
-def _fetch_predict_dates(market: str, limit: int = 120) -> List[str]:
-    table = _predict_table(market)
-    conn = mysql.connector.connect(**_db_config(market))
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"SELECT DISTINCT data_cutoff FROM {table} ORDER BY data_cutoff DESC LIMIT %s",
-                (limit,),
-            )
-            return [row[0].strftime("%Y-%m-%d") for row in cur.fetchall()]
-    finally:
-        conn.close()
-
-
-def _fetch_previous_trading_date(market: str) -> str | None:
-    table = _data_table(market)
-    conn = mysql.connector.connect(**_db_config(market))
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT DISTINCT date
-                FROM {table}
-                ORDER BY date DESC
-                LIMIT 2
-                """
-            )
-            rows = cur.fetchall()
-            if len(rows) >= 2:
-                return rows[1][0].strftime("%Y-%m-%d")
-            if rows:
-                return rows[0][0].strftime("%Y-%m-%d")
-            return None
-    finally:
-        conn.close()
-
-
-def _fetch_predictions(market: str, as_of: str) -> List[Dict[str, object]]:
-    predict_table = _predict_table(market)
-    data_table = _data_table(market)
-    list_table = _list_table(market)
-    conn = mysql.connector.connect(**_db_config(market))
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT
-                  p.data_cutoff,
-                  p.code,
-                  l.name,
-                  p.probability,
-                  d.Open,
-                  d.Close,
-                  d.Low,
-                  d.High,
-                  d.Volume
-                FROM {predict_table} p
-                JOIN {list_table} l
-                  ON l.code = p.code
-                JOIN {data_table} d
-                  ON d.code = p.code AND d.date = p.data_cutoff
-                WHERE p.data_cutoff = %s
-                ORDER BY p.probability DESC
-                """,
-                (as_of,),
-            )
-            rows = []
-            for row in cur.fetchall():
-                rows.append(
-                    {
-                        "data_cutoff": row[0].strftime("%Y-%m-%d"),
-                        "code": row[1],
-                        "name": row[2],
-                        "probability": row[3],
-                        "open": row[4],
-                        "close": row[5],
-                        "low": row[6],
-                        "high": row[7],
-                        "volume": row[8],
-                    }
-                )
-            return rows
-    finally:
-        conn.close()
-
-
-def _scanner_defaults(market: str) -> Dict[str, object]:
-    market = market.upper()
-    if market == "JP":
-        return {
-            "date": _fetch_previous_trading_date(market),
-            "close_max": 1000,
-            "trans_amnt_min": 500000000,
-        }
-    return {
-        "date": _fetch_previous_trading_date(market),
-        "close_max": 100000,
-        "trans_amnt_min": 1000000000,
-    }
-
-
-def _fetch_upperband_breakouts(
-    market: str,
-    scan_date: str,
-    trans_amnt_min: int | float,
-    close_max: int | float,
-) -> List[Dict[str, object]]:
-    data_table = _data_table(market)
-    list_table = _list_table(market)
-    conn = mysql.connector.connect(**_db_config(market))
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT
-                  sd.date,
-                  sd.code,
-                  sl.name,
-                  sd.Close,
-                  sd.UpperBand60_1,
-                  sd.transAmnt,
-                  (sd.Close / NULLIF(sd.UpperBand60_1, 0)) AS upperband_ratio
-                FROM {data_table} sd
-                JOIN {list_table} sl
-                  ON sl.code = sd.code
-                WHERE sd.date = %s
-                  AND sd.Close > sd.UpperBand60_1
-                  AND sd.Close < sd.UpperBand60_1 * 1.2
-                  AND sd.transAmnt > %s
-                  AND sd.Close < %s
-                ORDER BY sd.transAmnt DESC
-                LIMIT 20
-                """,
-                (scan_date, trans_amnt_min, close_max),
-            )
-            rows = []
-            for row in cur.fetchall():
-                rows.append(
-                    {
-                        "date": row[0].strftime("%Y-%m-%d"),
-                        "code": row[1],
-                        "name": row[2],
-                        "close": row[3],
-                        "upperband60_1": row[4],
-                        "transAmnt": row[5],
-                        "upperband_ratio": row[6],
-                    }
-                )
-            return rows
-    finally:
-        conn.close()
+def _predict_table(market: str, weekly: bool = False) -> str:
+    suffix = "_WEEK" if weekly else ""
+    return f"STOCK_PREDICT{suffix}_JP" if market == "JP" else f"STOCK_PREDICT{suffix}_KR"
 
 
 def _json_default(obj: object):
     if isinstance(obj, Decimal):
         return float(obj)
     return str(obj)
-
-
-def _fetch_series(market: str, code: str, as_of: str, limit: int = 240) -> List[Dict[str, object]]:
-    data_table = _data_table(market)
-    conn = mysql.connector.connect(**_db_config(market))
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT
-                  date,
-                  Open,
-                  High,
-                  Low,
-                  Close,
-                  Volume,
-                  `5MvAvg`,
-                  `20MvAvg`,
-                  `60MvAvg`,
-                  `120MvAvg`,
-                  `240MvAvg`,
-                  UpperBand60_1,
-                  LowerBand60_1,
-                  LowerBand60_3,
-                  DI_plus,
-                  DI_minus,
-                  ADX
-                FROM {data_table}
-                WHERE code = %s AND date <= %s
-                ORDER BY date DESC
-                LIMIT %s
-                """,
-                (code, as_of, limit),
-            )
-            rows = cur.fetchall()
-            rows.reverse()
-            series = []
-            for row in rows:
-                series.append(
-                    {
-                        "date": row[0].strftime("%Y-%m-%d"),
-                        "open": row[1],
-                        "high": row[2],
-                        "low": row[3],
-                        "close": row[4],
-                        "volume": row[5],
-                        "ma5": row[6],
-                        "ma20": row[7],
-                        "ma60": row[8],
-                        "ma120": row[9],
-                        "ma240": row[10],
-                        "bb_upper": row[11],
-                        "bb_lower": row[12],
-                        "bb_lower3": row[13],
-                        "di_plus": row[14],
-                        "di_minus": row[15],
-                        "adx": row[16],
-                    }
-                )
-            return series
-    finally:
-        conn.close()
 
 
 def _normalize_value(value: object) -> object:
@@ -447,10 +236,121 @@ def _fetch_stock_data(
         conn.close()
 
 
+def _fetch_previous_trading_date(market: str) -> str | None:
+    table = _data_table(market)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT DISTINCT date
+                FROM {table}
+                ORDER BY date DESC
+                LIMIT 2
+                """
+            )
+            rows = cur.fetchall()
+            if len(rows) >= 2:
+                return rows[1][0].strftime("%Y-%m-%d")
+            if rows:
+                return rows[0][0].strftime("%Y-%m-%d")
+            return None
+    finally:
+        conn.close()
+
+
+def _scanner_defaults(market: str) -> Dict[str, object]:
+    market = market.upper()
+    if market == "JP":
+        return {
+            "date": _fetch_previous_trading_date(market),
+            "close_max": 1000,
+            "trans_amnt_min": 500000000,
+        }
+    return {
+        "date": _fetch_previous_trading_date(market),
+        "close_max": 100000,
+        "trans_amnt_min": 1000000000,
+    }
+
+
+def _fetch_upperband_breakouts(
+    market: str,
+    scan_date: str,
+    trans_amnt_min: int | float,
+    close_max: int | float,
+    weekly: bool = False,
+) -> List[Dict[str, object]]:
+    data_table = _week_data_table(market) if weekly else _data_table(market)
+    list_table = _list_table(market)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT
+                  sd.date,
+                  sd.code,
+                  sl.name,
+                  sd.Close,
+                  sd.UpperBand60_1,
+                  sd.transAmnt,
+                  (sd.Close / NULLIF(sd.UpperBand60_1, 0)) AS upperband_ratio
+                FROM {data_table} sd
+                JOIN {list_table} sl
+                  ON sl.code = sd.code
+                WHERE sd.date = %s
+                  AND sd.Close > sd.UpperBand60_1
+                  AND sd.Close < sd.UpperBand60_1 * 1.2
+                  AND sd.transAmnt > %s
+                  AND sd.Close < %s
+                ORDER BY sd.transAmnt DESC
+                LIMIT 20
+                """,
+                (scan_date, trans_amnt_min, close_max),
+            )
+            rows = []
+            for row in cur.fetchall():
+                rows.append(
+                    {
+                        "date": row[0].strftime("%Y-%m-%d"),
+                        "code": row[1],
+                        "name": row[2],
+                        "close": row[3],
+                        "upperband60_1": row[4],
+                        "transAmnt": row[5],
+                        "upperband_ratio": row[6],
+                    }
+                )
+            return rows
+    finally:
+        conn.close()
+
+
 app = Flask(__name__)
 mcp = FastMCP("stocksearcher-mcp", streamable_http_path="/", host=os.environ.get("MCP_HOST", os.environ.get("WEB_HOST", "0.0.0.0")))
 
-@mcp.tool()
+
+@mcp.tool(
+    name="list_stocks",
+    description=(
+        "지정한 시장의 전체 종목 목록을 반환합니다.\n"
+        "\n"
+        "파라미터:\n"
+        "  market (str): 시장 코드. 'KR'(한국) 또는 'JP'(일본). 기본값 'KR'.\n"
+        "\n"
+        "반환값 (List[Dict]):\n"
+        "  - code (str): 종목 코드 (KR 예: '005930', JP 예: '7203')\n"
+        "  - name (str): 종목명\n"
+        "\n"
+        "사용 예시:\n"
+        "  list_stocks(market='KR')  # 한국 전체 종목\n"
+        "  list_stocks(market='JP')  # 일본 전체 종목\n"
+        "\n"
+        "활용 팁: 종목 코드를 모를 때 이 도구로 먼저 목록을 조회한 뒤 "
+        "stock_data 또는 stock_data_week로 상세 데이터를 조회하세요."
+    ),
+)
 def list_stocks(market: str = "KR") -> List[Dict[str, object]]:
     """List stocks for a market (KR or JP)."""
     market = market.upper()
@@ -459,7 +359,29 @@ def list_stocks(market: str = "KR") -> List[Dict[str, object]]:
     return _fetch_stock_list(market)
 
 
-@mcp.tool()
+@mcp.tool(
+    name="stock_data",
+    description=(
+        "특정 종목의 일봉(일별) OHLCV 및 기술적 지표 데이터를 반환합니다. 날짜 내림차순 정렬.\n"
+        "\n"
+        "파라미터:\n"
+        "  market     (str): 'KR' 또는 'JP' (필수)\n"
+        "  code       (str): 종목 코드 (필수). 예: KR='005930', JP='7203'\n"
+        "  limit      (int): 최대 반환 행 수. 기본값 2000. 0 이하이면 전체 반환.\n"
+        "  start_date (str): 조회 시작일 'YYYY-MM-DD' (선택)\n"
+        "  end_date   (str): 조회 종료일 'YYYY-MM-DD' (선택)\n"
+        "\n"
+        "반환값 컬럼 (일봉 테이블: STOCK_DATA_KR / STOCK_DATA_JP):\n"
+        "  - code, date, open, high, low, close, volume\n"
+        "  - 이동평균: MvAvg5, MvAvg20, MvAvg50, MvAvg60, MvAvg120 (JP는 MvAvg240 추가)\n"
+        "  - 볼린저밴드: UpperBand60_1, UpperBand60_2, LowerBand60_1, LowerBand60_2\n"
+        "  - DMI 지표: DI_plus, DI_minus, ADX\n"
+        "\n"
+        "사용 예시:\n"
+        "  stock_data(market='KR', code='005930', limit=60)              # 삼성전자 최근 60일\n"
+        "  stock_data(market='JP', code='7203', start_date='2024-01-01') # 토요타 2024년~"
+    ),
+)
 def stock_data(
     market: str,
     code: str,
@@ -476,32 +398,211 @@ def stock_data(
     return _fetch_stock_data(market, code, limit=limit, start_date=start_date, end_date=end_date)
 
 
-@mcp.tool()
-def list_predict_dates(market: str = "KR", limit: int = 120) -> List[str]:
-    """List available prediction dates (data_cutoff) for a market."""
+@mcp.tool(
+    name="stock_data_week",
+    description=(
+        "특정 종목의 주봉(주별) OHLCV 및 기술적 지표 데이터를 반환합니다. 날짜 내림차순 정렬.\n"
+        "일봉 대비 더 긴 추세 파악에 적합하며, 데이터 포인트 수가 적어 빠르게 조회됩니다.\n"
+        "\n"
+        "파라미터:\n"
+        "  market     (str): 'KR' 또는 'JP' (필수)\n"
+        "  code       (str): 종목 코드 (필수). 예: KR='005930', JP='7203'\n"
+        "  limit      (int): 최대 반환 행 수. 기본값 500 (약 10년치). 0 이하이면 전체 반환.\n"
+        "  start_date (str): 조회 시작일 'YYYY-MM-DD' (선택)\n"
+        "  end_date   (str): 조회 종료일 'YYYY-MM-DD' (선택)\n"
+        "\n"
+        "반환값 컬럼 (주봉 테이블: STOCK_DATA_WEEK_KR / STOCK_DATA_WEEK_JP):\n"
+        "  - code, date (해당 주 시작일), open, high, low, close, volume\n"
+        "  - 이동평균: MvAvg5, MvAvg20, MvAvg50, MvAvg60, MvAvg120 (JP는 MvAvg240 추가)\n"
+        "  - 볼린저밴드: UpperBand60_1, UpperBand60_2, LowerBand60_1, LowerBand60_2\n"
+        "  - DMI 지표: DI_plus, DI_minus, ADX\n"
+        "\n"
+        "사용 예시:\n"
+        "  stock_data_week(market='KR', code='005930', limit=52)              # 삼성전자 최근 1년 주봉\n"
+        "  stock_data_week(market='JP', code='7203', start_date='2023-01-01') # 토요타 2023년~ 주봉\n"
+        "\n"
+        "활용 팁: 단기 매매 신호는 일봉(stock_data), 중장기 추세 분석은 주봉(stock_data_week)을 사용하세요."
+    ),
+)
+def stock_data_week(
+    market: str,
+    code: str,
+    limit: int = 500,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> List[Dict[str, object]]:
+    """Return weekly stock_data rows for a code, ordered by date DESC."""
     market = market.upper()
     if market not in ("KR", "JP"):
         raise ValueError("market must be KR or JP")
-    return _fetch_predict_dates(market, limit=limit)
+    if not code:
+        raise ValueError("code is required")
+    table = _week_data_table(market)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor(dictionary=True) as cur:
+            clauses = ["code = %s"]
+            params: List[object] = [code]
+            if start_date:
+                clauses.append("date >= %s")
+                params.append(start_date)
+            if end_date:
+                clauses.append("date <= %s")
+                params.append(end_date)
+            where_sql = " AND ".join(clauses)
+            limit_sql = "" if limit is None or limit <= 0 else " LIMIT %s"
+            if limit_sql:
+                params.append(limit)
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {table}
+                WHERE {where_sql}
+                ORDER BY date DESC
+                {limit_sql}
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall()
+            return [_normalize_row(row) for row in rows]
+    finally:
+        conn.close()
 
 
-@mcp.tool()
-def predict_rows(market: str, as_of: str) -> List[Dict[str, object]]:
-    """Return prediction rows for a market and data_cutoff (as_of)."""
+@mcp.tool(
+    name="list_predict_dates",
+    description=(
+        "예측 결과가 존재하는 기준일(data_cutoff) 목록을 최신순으로 반환합니다.\n"
+        "\n"
+        "파라미터:\n"
+        "  market (str): 'KR' 또는 'JP' (필수)\n"
+        "  limit  (int): 최대 반환 건수. 기본값 120. 0 이하이면 전체 반환.\n"
+        "  weekly (bool): True이면 주봉 예측 테이블(STOCK_PREDICT_WEEK_*) 사용. 기본값 False.\n"
+        "\n"
+        "반환값 (List[str]): 'YYYY-MM-DD' 형식의 날짜 문자열 목록 (최신순)\n"
+        "\n"
+        "사용 예시:\n"
+        "  list_predict_dates(market='KR')              # 한국 일봉 예측 기준일 목록\n"
+        "  list_predict_dates(market='JP', limit=10)    # 일본 최근 10개 기준일\n"
+        "  list_predict_dates(market='KR', weekly=True) # 한국 주봉 예측 기준일\n"
+        "\n"
+        "활용 팁: 이 목록에서 as_of 값을 골라 predict_rows로 실제 예측 결과를 조회하세요."
+    ),
+)
+def list_predict_dates(
+    market: str,
+    limit: int = 120,
+    weekly: bool = False,
+) -> List[str]:
+    """Return distinct data_cutoff dates from the predict table, newest first."""
+    market = market.upper()
+    if market not in ("KR", "JP"):
+        raise ValueError("market must be KR or JP")
+    table = _predict_table(market, weekly=weekly)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor() as cur:
+            limit_sql = "" if limit is None or limit <= 0 else f" LIMIT {int(limit)}"
+            cur.execute(
+                f"SELECT DISTINCT data_cutoff FROM {table} ORDER BY data_cutoff DESC{limit_sql}"
+            )
+            return [row[0].strftime("%Y-%m-%d") if hasattr(row[0], "strftime") else str(row[0]) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+@mcp.tool(
+    name="predict_rows",
+    description=(
+        "특정 기준일(as_of)의 예측 결과 전체를 확률 내림차순으로 반환합니다.\n"
+        "\n"
+        "파라미터:\n"
+        "  market (str): 'KR' 또는 'JP' (필수)\n"
+        "  as_of  (str): 예측 기준일 'YYYY-MM-DD' (필수). list_predict_dates로 유효 날짜 확인.\n"
+        "  weekly (bool): True이면 주봉 예측 테이블(STOCK_PREDICT_WEEK_*) 사용. 기본값 False.\n"
+        "\n"
+        "반환값 컬럼 (STOCK_PREDICT_KR / STOCK_PREDICT_JP):\n"
+        "  - data_cutoff (str): 예측 기준일\n"
+        "  - code        (str): 종목 코드\n"
+        "  - probability (float): 상승 확률 (0~1)\n"
+        "  - run_name    (str): 학습 실행 식별자\n"
+        "  - seq_len     (int): 입력 시퀀스 길이\n"
+        "  - horizon_days(int): 예측 수익 판단 기간(일)\n"
+        "  - rise_threshold(float): 상승 판정 임계값\n"
+        "  - created_at  (str): 레코드 생성 시각\n"
+        "\n"
+        "사용 예시:\n"
+        "  predict_rows(market='KR', as_of='2025-05-01')              # 한국 2025-05-01 기준 예측\n"
+        "  predict_rows(market='JP', as_of='2025-05-01')              # 일본 동일 기준일\n"
+        "  predict_rows(market='KR', as_of='2025-05-01', weekly=True) # 주봉 예측\n"
+        "\n"
+        "활용 팁: probability 상위 종목이 모델이 선택한 매수 후보입니다. "
+        "종목명 확인은 list_stocks, 차트 데이터는 stock_data를 추가로 조회하세요."
+    ),
+)
+def predict_rows(
+    market: str,
+    as_of: str,
+    weekly: bool = False,
+) -> List[Dict[str, object]]:
+    """Return all predict rows for a given data_cutoff date, ordered by probability DESC."""
     market = market.upper()
     if market not in ("KR", "JP"):
         raise ValueError("market must be KR or JP")
     if not as_of:
         raise ValueError("as_of is required")
-    return _fetch_predictions(market, as_of)
+    table = _predict_table(market, weekly=weekly)
+    conn = mysql.connector.connect(**_db_config(market))
+    try:
+        with conn.cursor(dictionary=True) as cur:
+            cur.execute(
+                f"SELECT * FROM {table} WHERE data_cutoff = %s ORDER BY probability DESC",
+                (as_of,),
+            )
+            rows = cur.fetchall()
+            return [_normalize_row(row) for row in rows]
+    finally:
+        conn.close()
 
 
-@mcp.tool()
+@mcp.tool(
+    name="scanner_rows",
+    description=(
+        "볼린저밴드 상단(UpperBand60_1) 돌파 종목을 스캔하여 반환합니다.\n"
+        "Close가 UpperBand60_1 초과이면서 UpperBand60_1 * 1.2 미만인 종목을 거래대금 내림차순으로 최대 20개 반환합니다.\n"
+        "\n"
+        "파라미터:\n"
+        "  market         (str): 'KR' 또는 'JP'. 기본값 'JP'.\n"
+        "  scan_date      (str): 스캔 기준일 'YYYY-MM-DD'. 생략 시 직전 거래일 자동 사용.\n"
+        "  trans_amnt_min (float): 최소 거래대금 필터. 생략 시 시장별 기본값 사용 (JP: 5억, KR: 10억).\n"
+        "  close_max      (float): 최대 주가 필터. 생략 시 시장별 기본값 사용 (JP: 1000, KR: 100000).\n"
+        "  weekly         (bool): True이면 주봉 테이블(STOCK_DATA_WEEK_*) 기준으로 스캔. 기본값 False(일봉).\n"
+        "\n"
+        "반환값 컬럼:\n"
+        "  - date            (str): 기준일\n"
+        "  - code            (str): 종목 코드\n"
+        "  - name            (str): 종목명\n"
+        "  - close           (float): 종가\n"
+        "  - upperband60_1   (float): 볼린저밴드 상단 (60일 기준 1σ)\n"
+        "  - transAmnt       (float): 거래대금\n"
+        "  - upperband_ratio (float): Close / UpperBand60_1 비율\n"
+        "\n"
+        "사용 예시:\n"
+        "  scanner_rows(market='JP')                           # 일본 직전 거래일 일봉 기준 스캔\n"
+        "  scanner_rows(market='KR', scan_date='2025-05-01')  # 한국 특정일 스캔\n"
+        "  scanner_rows(market='JP', weekly=True)              # 일본 주봉 기준 스캔\n"
+        "  scanner_rows(market='JP', trans_amnt_min=1000000000, close_max=500)  # 조건 직접 지정\n"
+        "\n"
+        "활용 팁: 상단 돌파 직후 종목을 빠르게 찾을 때 사용하세요. "
+        "상세 차트 데이터는 stock_data(일봉) 또는 stock_data_week(주봉)으로 추가 조회하세요."
+    ),
+)
 def scanner_rows(
     market: str = "JP",
     scan_date: str | None = None,
     trans_amnt_min: float | None = None,
     close_max: float | None = None,
+    weekly: bool = False,
 ) -> List[Dict[str, object]]:
     """Return UpperBand scanner rows for a market (KR or JP)."""
     market = market.upper()
@@ -520,924 +621,68 @@ def scanner_rows(
         scan_date=str(resolved_date),
         trans_amnt_min=float(resolved_trans_amnt_min),
         close_max=float(resolved_close_max),
+        weekly=weekly,
     )
 
 
+# ── Batch API ─────────────────────────────────────────────────────────────────
 
-@app.get("/")
-def index() -> Response:
-    message = request.args.get("msg")
-    tasks = []
-    with TASK_LOCK:
-        for state in TASKS.values():
-            tasks.append(state)
-    logs = _list_logs()
-    html_tasks = []
-    for state in sorted(tasks, key=lambda s: s.started_at, reverse=True):
-        status = "running" if state.finished_at is None else f"exit={state.exit_code}"
-        html_tasks.append(
-            f"<li>{html.escape(state.name)} - {status} - "
-            f"<a href='{url_for('view_log', name=state.log_name)}'>{html.escape(state.log_name)}</a></li>"
-        )
-
-    html_logs = []
-    for name, mtime in logs:
-        ts = time.strftime("%F %T", time.localtime(mtime))
-        html_logs.append(
-            f"<li><a href='{url_for('view_log', name=name)}'>{html.escape(name)}</a> "
-            f"<span style='color:#666'>({ts})</span></li>"
-        )
-
-    msg_html = f"<p style='color:#b00020'>{html.escape(message)}</p>" if message else ""
-    body = f"""
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>StockSearcher Control</title>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
-    <style>
-      body {{
-        font-family: "Roboto", sans-serif;
-        background: #f5f7fb;
-      }}
-      .page {{
-        max-width: 1680px;
-        margin: 32px auto;
-        padding: 0 16px;
-      }}
-      .card-panel {{
-        border-radius: 12px;
-        background: transparent;
-        box-shadow: none;
-      }}
-      .tabs {{
-        display: flex;
-        gap: 6px;
-        border-bottom: none;
-        margin-bottom: 0;
-      }}
-      .tab-btn {{
-        border: none;
-        background: transparent;
-        padding: 10px 16px;
-        border-radius: 8px 8px 0 0;
-        cursor: pointer;
-        font-weight: 500;
-      }}
-      .tab-btn.active {{
-        background: #e8f5e9;
-        color: #1b5e20;
-        border: 1px solid #c8e6c9;
-        border-bottom: 1px solid #e8f5e9;
-      }}
-      .tab-panel {{
-        display: none;
-        background: #e8f5e9;
-        padding: 16px;
-        border-radius: 12px;
-      }}
-      .tab-panel.active {{
-        display: block;
-      }}
-      .grid {{
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 12px;
-      }}
-      form {{
-        border: none;
-        padding: 0;
-        border-radius: 10px;
-        background: transparent;
-        box-shadow: none;
-      }}
-      button {{
-        width: 100%;
-        padding: 10px;
-        font-size: 14px;
-      }}
-      .action-btn {{
-        width: 100%;
-      }}
-      .section {{
-        margin-top: 24px;
-      }}
-      .batch-title {{
-        font-size: 12pt;
-      }}
-      ul {{
-        padding-left: 18px;
-      }}
-      .search-bar {{
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px;
-        align-items: end;
-        margin-bottom: 6px;
-      }}
-      .search-bar select {{
-        height: 2.2rem;
-        font-size: 13px;
-      }}
-      .filter-bar {{
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 12px;
-        margin: 4px 0 8px;
-      }}
-      .form-legend {{
-        font-size: 12px;
-        color: #666;
-        margin: 2px 0;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-      }}
-      .legend-wrap {{
-        background: #e3f2fd;
-        padding: 1px 8px;
-        border-radius: 8px;
-        /* margin-bottom: 6px; */
-      }}
-      .input-field {{
-        margin: 0 0 8px 0;
-        margin-left: 5px;
-        margin-right: 5px;
-      }}
-      .input-field input[type="number"] {{
-        margin: 0 0 4px 0;
-        background: #fff;
-        padding: 0 6px;
-        border-radius: 4px;
-      }}
-      .input-field select {{
-        margin: 0 0 4px 0;
-      }}
-      .input-field input[type="text"] {{
-        background: #fff;
-        padding: 0 6px;
-        border-radius: 4px;
-      }}
-      .input-field .select-wrapper input.select-dropdown {{
-        background: #fff;
-        padding: 0 6px;
-        border-radius: 4px;
-        height: 2.2rem;
-      }}
-      .input-field input[type="number"] {{
-        height: 2.2rem;
-        font-size: 13px;
-      }}
-      .input-field label {{
-        font-size: 12px;
-      }}
-      .filter-actions {{
-        display: flex;
-        gap: 8px;
-        align-items: flex-end;
-        padding-bottom: 15px;
-      }}
-      .select-wrapper {{
-        position: relative;
-        margin-left: 5px;
-        margin-right: 5px;
-      }}
-      .action-btn:hover {{
-        transform: translateY(-1px);
-        box-shadow: 0 3px 8px rgba(0,0,0,0.18);
-      }}
-      table.dataTable tbody tr td {{
-        vertical-align: middle;
-      }}
-      #predict-table tbody td:nth-child(2) {{
-        cursor: pointer;
-      }}
-      #scanner-table tbody td:nth-child(2) {{
-        cursor: pointer;
-      }}
-      #predict-table tbody td:nth-child(2):hover {{
-        background: #1e88e5;
-        color: #fff;
-      }}
-      #scanner-table tbody td:nth-child(2):hover {{
-        background: #1e88e5;
-        color: #fff;
-      }}
-      #predict-table tbody tr.selected {{
-        background: #e8f5e9;
-      }}
-      #scanner-table tbody tr.selected {{
-        background: #e8f5e9;
-      }}
-      #predict-table {{
-        background: #fff;
-      }}
-      #scanner-table {{
-        background: #fff;
-      }}
-      .chart-canvas {{
-        width: 100%;
-        height: 540px;
-      }}
-      .chart-canvas .hoverlayer {{
-        display: none !important;
-      }}
-      #chart-container {{
-        width: 100%;
-      }}
-      .dataTables_wrapper .dataTables_filter input {{
-        border-bottom: 1px solid #90caf9;
-        font-size: 8px;
-        height: 1.2rem;
-        background: white;
-      }}
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <div class="card-panel">
-        <h4 style="margin-top:0">StockSearcher Control</h4>
-        {msg_html}
-        <div class="tabs">
-          <button class="tab-btn active" data-tab="batch">Batch</button>
-          <button class="tab-btn" data-tab="search">Predict Search</button>
-          <button class="tab-btn" data-tab="scanner">UpperBand Scanner</button>
-        </div>
-
-        <div class="tab-panel active" id="tab-batch">
-          <div class="section">
-      <h2 class="batch-title">JP</h2>
-      <div class="grid">
-        {action_form("dataset_jp", "Run dataset_jp.py")}
-        {action_form("predict_jp", "Run predict_jp.py")}
-        {action_form("job_jp", "Run JP job (dataset + predict)")}
-      </div>
-      </div>
-
-          <div class="section">
-      <h2 class="batch-title">KR</h2>
-      <div class="grid">
-        {action_form("dataset_kr", "Run dataset_kr.py")}
-        {action_form("predict_kr", "Run predict_kr.py")}
-        {action_form("job_kr", "Run KR job (dataset + predict)")}
-      </div>
-      </div>
-
-          <div class="section">
-      <h2 class="batch-title">Active/Recent Tasks</h2>
-      <ul>
-        {''.join(html_tasks) if html_tasks else '<li>None</li>'}
-      </ul>
-      </div>
-
-          <div class="section">
-      <h2 class="batch-title">Recent Logs</h2>
-      <ul>
-        {''.join(html_logs) if html_logs else '<li>No logs found</li>'}
-      </ul>
-      </div>
-        </div>
-
-        <div class="tab-panel" id="tab-search">
-          <div class="section">
-        <h2>Predict Search</h2>
-        <div class="legend-wrap">
-          <div class="form-legend">Search</div>
-          <div class="search-bar">
-          <div class="input-field">
-            <select id="market">
-              <option value="JP" selected>JP</option>
-              <option value="KR">KR</option>
-            </select>
-            <label>Market</label>
-          </div>
-          <div class="input-field">
-            <select id="asof"></select>
-            <label>Data Cutoff</label>
-          </div>
-          <div class="filter-actions">
-            <a class="btn waves-effect waves-light blue" id="search-btn">Search</a>
-          </div>
-        </div>
-        </div>
-        <div class="legend-wrap">
-          <div class="form-legend">Filters (Open / Close)</div>
-          <div class="filter-bar">
-          <div class="input-field">
-            <input id="open-min" type="number" step="0.0001">
-            <label for="open-min">Open min</label>
-          </div>
-          <div class="input-field">
-            <input id="open-max" type="number" step="0.0001">
-            <label for="open-max">Open max</label>
-          </div>
-          <div class="input-field">
-            <input id="close-min" type="number" step="0.0001">
-            <label for="close-min">Close min</label>
-          </div>
-          <div class="input-field">
-            <input id="close-max" type="number" step="0.0001">
-            <label for="close-max">Close max</label>
-          </div>
-          <div class="filter-actions">
-            <a class="btn-flat" id="clear-filters">Clear</a>
-          </div>
-        </div>
-        </div>
-        <table id="predict-table" class="display" style="width:100%">
-          <thead>
-            <tr>
-              <th>data_cutoff</th>
-              <th>code</th>
-              <th>name</th>
-              <th>probability</th>
-              <th>open</th>
-              <th>close</th>
-              <th>low</th>
-              <th>high</th>
-              <th>volume</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-        </div>
-
-        <div class="tab-panel" id="tab-scanner">
-          <div class="section">
-        <h2>UpperBand Scanner</h2>
-        <div class="legend-wrap">
-          <div class="form-legend">Scanner Parameters</div>
-          <div class="search-bar">
-          <div class="input-field">
-            <select id="scanner-market">
-              <option value="JP" selected>JP</option>
-              <option value="KR">KR</option>
-            </select>
-            <label>Market</label>
-          </div>
-          <div class="input-field">
-            <input id="scanner-date" type="text" placeholder="YYYY-MM-DD">
-            <label for="scanner-date">Date</label>
-          </div>
-          <div class="input-field">
-            <input id="scanner-trans-amount" type="number" step="1">
-            <label for="scanner-trans-amount">transAmnt min</label>
-          </div>
-          <div class="input-field">
-            <input id="scanner-close-max" type="number" step="0.0001">
-            <label for="scanner-close-max">Close max</label>
-          </div>
-          <div class="filter-actions">
-            <a class="btn waves-effect waves-light blue" id="scanner-search-btn">Search</a>
-          </div>
-        </div>
-        </div>
-        <table id="scanner-table" class="display" style="width:100%">
-          <thead>
-            <tr>
-              <th>date</th>
-              <th>code</th>
-              <th>name</th>
-              <th>close</th>
-              <th>upperband60_1</th>
-              <th>ratio</th>
-              <th>transAmnt</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-        </div>
-      </div>
-    </div>
-
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
-    <script>
-      document.addEventListener("DOMContentLoaded", () => {{
-        const selects = document.querySelectorAll("select");
-        M.FormSelect.init(selects);
-      }});
-
-      const tabs = document.querySelectorAll(".tab-btn");
-      tabs.forEach((btn) => {{
-        btn.addEventListener("click", () => {{
-          tabs.forEach((b) => b.classList.remove("active"));
-          btn.classList.add("active");
-          const target = btn.dataset.tab;
-          document.querySelectorAll(".tab-panel").forEach((panel) => {{
-            panel.classList.toggle("active", panel.id === "tab-" + target);
-          }});
-        }});
-      }});
-
-      let table = null;
-      let scannerTable = null;
-      function formatNumber(value) {{
-        if (value === null || value === undefined || value === "") return "";
-        const num = Number(value);
-        if (Number.isNaN(num)) return value;
-        return num.toLocaleString("en-US", {{ maximumFractionDigits: 4 }});
-      }}
-
-      function parseFilterValue(id) {{
-        const val = document.getElementById(id).value.trim();
-        if (!val) return null;
-        const num = Number(val);
-        return Number.isNaN(num) ? null : num;
-      }}
-
-      function registerFilters() {{
-        $.fn.dataTable.ext.search.push((settings, data) => {{
-          const openVal = Number(data[4].replace(/,/g, ""));
-          const closeVal = Number(data[5].replace(/,/g, ""));
-          const openMin = parseFilterValue("open-min");
-          const openMax = parseFilterValue("open-max");
-          const closeMin = parseFilterValue("close-min");
-          const closeMax = parseFilterValue("close-max");
-
-          if (openMin !== null && openVal < openMin) return false;
-          if (openMax !== null && openVal > openMax) return false;
-          if (closeMin !== null && closeVal < closeMin) return false;
-          if (closeMax !== null && closeVal > closeMax) return false;
-          return true;
-        }});
-      }}
-
-      async function loadDates(autoSearch = false) {{
-        const market = document.getElementById("market").value;
-        const res = await fetch(`/api/predict-dates?market=${{encodeURIComponent(market)}}`);
-        const data = await res.json();
-        const select = document.getElementById("asof");
-        select.innerHTML = "";
-        data.dates.forEach((d) => {{
-          const opt = document.createElement("option");
-          opt.value = d;
-          opt.textContent = d;
-          select.appendChild(opt);
-        }});
-        M.FormSelect.init(select);
-        if (autoSearch && data.dates.length) {{
-          select.value = data.dates[0];
-          await searchPredicts();
-        }}
-      }}
-
-      async function searchPredicts() {{
-        const market = document.getElementById("market").value;
-        const asof = document.getElementById("asof").value;
-        if (!asof) return;
-        const res = await fetch(`/api/predict?market=${{encodeURIComponent(market)}}&as_of=${{encodeURIComponent(asof)}}`);
-        const data = await res.json();
-        const rows = data.rows.map((r) => [
-          r.data_cutoff,
-          r.code,
-          r.name,
-          formatNumber(r.probability),
-          formatNumber(r.open),
-          formatNumber(r.close),
-          formatNumber(r.low),
-          formatNumber(r.high),
-          formatNumber(r.volume),
-        ]);
-        if (!table) {{
-          registerFilters();
-          table = new DataTable("#predict-table", {{
-            data: rows,
-            pageLength: 50,
-            order: [[3, "desc"]],
-          }});
-          let openedChildRow = null;
-          $("#predict-table tbody").on("click", "td:nth-child(2)", async function () {{
-            const rowEl = $(this).closest("tr");
-            $("#predict-table tbody tr").removeClass("selected");
-            rowEl.addClass("selected");
-            const row = table.row(rowEl);
-            const rowData = row.data();
-            if (!rowData) return;
-            const code = rowData[1];
-            const asof = rowData[0];
-            const market = document.getElementById("market").value;
-
-            // Close previous child row if exists
-            if (openedChildRow && openedChildRow !== row) {{
-              openedChildRow.child.hide();
-              openedChildRow = null;
-            }}
-
-            // Toggle child row for current selection
-            if (row.child.isShown()) {{
-              row.child.hide();
-              openedChildRow = null;
-              return;
-            }}
-
-            row.child(`<div class="chart-container"><div class="chart-canvas"></div></div>`).show();
-            openedChildRow = row;
-
-            const childRow = row.child(); // node
-            const child$ = $(childRow);
-            let chartEl = child$.find(".chart-canvas")[0];
-            if (!chartEl) {{
-              child$.html('<div class="chart-container"><div class="chart-canvas"></div></div>');
-              chartEl = child$.find(".chart-canvas")[0];
-            }}
-
-            if (chartEl) {{
-              chartEl.style.height = "540px";
-              chartEl.style.width = "100%";
-              chartEl.scrollIntoView({{ behavior: "smooth", block: "start" }});
-            }}
-            const renderChart = async () => {{
-              if (!chartEl) return;
-              await loadChart(market, code, asof, chartEl);
-              if (chartEl) {{
-                Plotly.Plots.resize(chartEl);
-              }}
-            }};
-            requestAnimationFrame(() => requestAnimationFrame(renderChart));
-          }});
-        }} else {{
-          table.clear();
-          table.rows.add(rows);
-          table.draw();
-        }}
-      }}
-
-      async function loadScannerDefaults() {{
-        const market = document.getElementById("scanner-market").value;
-        const res = await fetch(`/api/scanner-defaults?market=${{encodeURIComponent(market)}}`);
-        const data = await res.json();
-        document.getElementById("scanner-date").value = data.date || "";
-        document.getElementById("scanner-trans-amount").value = data.trans_amnt_min ?? "";
-        document.getElementById("scanner-close-max").value = data.close_max ?? "";
-        M.updateTextFields();
-      }}
-
-      async function searchScanner() {{
-        const market = document.getElementById("scanner-market").value;
-        const scanDate = document.getElementById("scanner-date").value.trim();
-        const transAmntMin = document.getElementById("scanner-trans-amount").value.trim();
-        const closeMax = document.getElementById("scanner-close-max").value.trim();
-        if (!scanDate || !transAmntMin || !closeMax) return;
-
-        const query = new URLSearchParams({{
-          market,
-          date: scanDate,
-          trans_amnt_min: transAmntMin,
-          close_max: closeMax,
-        }});
-        const res = await fetch(`/api/scanner?${{query.toString()}}`);
-        const data = await res.json();
-        const rows = data.rows.map((r) => [
-          r.date,
-          r.code,
-          r.name,
-          formatNumber(r.close),
-          formatNumber(r.upperband60_1),
-          formatNumber(r.upperband_ratio),
-          formatNumber(r.transAmnt),
-        ]);
-
-        if (!scannerTable) {{
-          scannerTable = new DataTable("#scanner-table", {{
-            data: rows,
-            pageLength: 50,
-            order: [[6, "desc"]],
-          }});
-          let openedChildRow = null;
-          $("#scanner-table tbody").on("click", "td:nth-child(2)", async function () {{
-            const rowEl = $(this).closest("tr");
-            $("#scanner-table tbody tr").removeClass("selected");
-            rowEl.addClass("selected");
-            const row = scannerTable.row(rowEl);
-            const rowData = row.data();
-            if (!rowData) return;
-            const code = rowData[1];
-            const asof = rowData[0];
-            const rowMarket = document.getElementById("scanner-market").value;
-
-            if (openedChildRow && openedChildRow !== row) {{
-              openedChildRow.child.hide();
-              openedChildRow = null;
-            }}
-
-            if (row.child.isShown()) {{
-              row.child.hide();
-              openedChildRow = null;
-              return;
-            }}
-
-            row.child(`<div class="chart-container"><div class="chart-canvas"></div></div>`).show();
-            openedChildRow = row;
-
-            const childRow = row.child();
-            const child$ = $(childRow);
-            let chartEl = child$.find(".chart-canvas")[0];
-            if (!chartEl) {{
-              child$.html('<div class="chart-container"><div class="chart-canvas"></div></div>');
-              chartEl = child$.find(".chart-canvas")[0];
-            }}
-
-            if (chartEl) {{
-              chartEl.style.height = "540px";
-              chartEl.style.width = "100%";
-              chartEl.scrollIntoView({{ behavior: "smooth", block: "start" }});
-            }}
-            const renderChart = async () => {{
-              if (!chartEl) return;
-              await loadChart(rowMarket, code, asof, chartEl);
-              if (chartEl) {{
-                Plotly.Plots.resize(chartEl);
-              }}
-            }};
-            requestAnimationFrame(() => requestAnimationFrame(renderChart));
-          }});
-        }} else {{
-          scannerTable.clear();
-          scannerTable.rows.add(rows);
-          scannerTable.draw();
-        }}
-      }}
-
-      document.getElementById("market").addEventListener("change", async () => {{
-        await loadDates(true);
-      }});
-      document.getElementById("scanner-market").addEventListener("change", async () => {{
-        await loadScannerDefaults();
-      }});
-      document.getElementById("search-btn").addEventListener("click", searchPredicts);
-      document.getElementById("scanner-search-btn").addEventListener("click", searchScanner);
-      ["open-min", "open-max", "close-min", "close-max"].forEach((id) => {{
-        document.getElementById(id).addEventListener("input", () => {{
-          if (table) table.draw();
-        }});
-      }});
-      document.getElementById("clear-filters").addEventListener("click", () => {{
-        ["open-min", "open-max", "close-min", "close-max"].forEach((id) => {{
-          const el = document.getElementById(id);
-          el.value = "";
-        }});
-        M.updateTextFields();
-        if (table) table.draw();
-      }});
-
-      loadDates(true);
-      loadScannerDefaults();
-
-      async function loadChart(market, code, asof, targetEl) {{
-        const res = await fetch(`/api/series?market=${{encodeURIComponent(market)}}&code=${{encodeURIComponent(code)}}&as_of=${{encodeURIComponent(asof)}}`);
-        const data = await res.json();
-        const series = data.series;
-        if (!series || !series.length || !targetEl) {{
-          if (targetEl) Plotly.purge(targetEl);
-          return;
-        }}
-        const dates = series.map((d) => d.date);
-        const missingDates = (() => {{
-          if (!dates.length) return [];
-          const present = new Set(dates);
-          const start = new Date(dates[0] + "T00:00:00Z");
-          const end = new Date(dates[dates.length - 1] + "T00:00:00Z");
-          const missing = [];
-          for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {{
-            const iso = d.toISOString().slice(0, 10);
-            if (!present.has(iso)) missing.push(iso);
-          }}
-          return missing;
-        }})();
-        const traceCandle = {{
-          x: dates,
-          open: series.map((d) => d.open),
-          high: series.map((d) => d.high),
-          low: series.map((d) => d.low),
-          close: series.map((d) => d.close),
-          type: "candlestick",
-          name: "Price",
-          xaxis: "x",
-          yaxis: "y",
-          increasing: {{ line: {{ color: "#c62828" }}, fillcolor: "#c62828" }},
-          decreasing: {{ line: {{ color: "#1e88e5" }}, fillcolor: "#1e88e5" }},
-          hoverinfo: "skip",
-          hovertemplate: "",
-        }};
-        const maTrace = (key, name, color) => ({{
-          x: dates,
-          y: series.map((d) => d[key]),
-          type: "scatter",
-          mode: "lines",
-          name,
-          line: {{ color, width: 1 }},
-          xaxis: "x",
-          yaxis: "y",
-          hoverinfo: "skip",
-          hovertemplate: "",
-        }});
-        const bbTrace = (key, name, color) => ({{
-          x: dates,
-          y: series.map((d) => d[key]),
-          type: "scatter",
-          mode: "lines",
-          name,
-          line: {{ color, width: 1, dash: "dot" }},
-          xaxis: "x",
-          yaxis: "y",
-          hoverinfo: "skip",
-          hovertemplate: "",
-        }});
-        const volumeTrace = {{
-          x: dates,
-          y: series.map((d) => d.volume),
-          type: "bar",
-          name: "Volume",
-          xaxis: "x2",
-          yaxis: "y2",
-          marker: {{ color: "#90caf9" }},
-          hoverinfo: "skip",
-          hovertemplate: "",
-        }};
-        const dmiTrace = (key, name, color) => ({{
-          x: dates,
-          y: series.map((d) => d[key]),
-          type: "scatter",
-          mode: "lines",
-          name,
-          line: {{ color, width: 1 }},
-          xaxis: "x3",
-          yaxis: "y3",
-          hoverinfo: "skip",
-          hovertemplate: "",
-        }});
-        const layout = {{
-          grid: {{
-            rows: 3,
-            columns: 1,
-            pattern: "independent",
-            roworder: "top to bottom",
-          }},
-          height: 540,
-          margin: {{ t: 30, r: 20, b: 30, l: 50 }},
-          xaxis: {{
-            rangeslider: {{ visible: false }},
-            domain: [0, 1],
-            rangebreaks: missingDates.length ? [{{ values: missingDates }}] : [],
-          }},
-          xaxis2: {{
-            matches: "x",
-            showticklabels: false,
-            domain: [0, 1],
-          }},
-          xaxis3: {{
-            matches: "x",
-            domain: [0, 1],
-          }},
-          yaxis: {{
-            title: "Price",
-            domain: [0.22, 1.0],
-          }},
-          yaxis2: {{
-            title: "Volume",
-            domain: [0.12, 0.19],
-          }},
-          yaxis3: {{
-            title: "DMI",
-            domain: [0.0, 0.08],
-          }},
-          hovermode: false,
-          showlegend: true,
-          legend: {{ orientation: "h" }},
-        }};
-        Plotly.newPlot(
-          targetEl,
-          [
-            traceCandle,
-            maTrace("ma5", "MA5", "#1e88e5"),
-            maTrace("ma20", "MA20", "#43a047"),
-            maTrace("ma60", "MA60", "#fb8c00"),
-            maTrace("ma120", "MA120", "#8e24aa"),
-            maTrace("ma240", "MA240", "#6d4c41"),
-            bbTrace("bb_upper", "BB Upper", "#ef5350"),
-            bbTrace("bb_lower", "BB Lower", "#ef5350"),
-            bbTrace("bb_lower3", "BB Lower3", "#8d6e63"),
-            volumeTrace,
-            dmiTrace("di_plus", "DI+", "#26a69a"),
-            dmiTrace("di_minus", "DI-", "#ef5350"),
-            dmiTrace("adx", "ADX", "#5c6bc0"),
-          ],
-          layout,
-          {{ responsive: true, displayModeBar: false }}
-        );
-      }}
-    </script>
-  </body>
-</html>
-"""
-    return Response(body, mimetype="text/html")
-
-
-def action_form(action: str, label: str) -> str:
-    return f"""
-<form method="post" action="{url_for('run_task')}">
-  <input type="hidden" name="task" value="{html.escape(action)}" />
-  <button type="submit" class="btn waves-effect waves-light green action-btn">{html.escape(label)}</button>
-</form>
-"""
-
-
-@app.post("/run")
-def run_task() -> Response:
-    task = request.form.get("task", "")
+@app.post("/api/run")
+def api_run() -> Response:
+    data = request.get_json(silent=True) or {}
+    task = str(data.get("task", "")).strip()
     cmds = _job_cmds()
     if task not in cmds:
-        return Response("unknown task", status=400)
+        payload = json.dumps({"error": f"unknown task", "valid_tasks": list(cmds.keys())})
+        return Response(payload, status=400, mimetype="application/json")
     try:
         state = _start_task(task, cmds[task])
     except RuntimeError as exc:
-        return redirect(url_for("index", msg=str(exc)))
-    return redirect(url_for("view_log", name=state.log_name))
+        payload = json.dumps({"error": str(exc)})
+        return Response(payload, status=409, mimetype="application/json")
+    payload = json.dumps({
+        "task": state.name,
+        "log_name": state.log_name,
+        "status": "started",
+        "started_at": state.started_at,
+    })
+    return Response(payload, status=202, mimetype="application/json")
 
 
-@app.get("/logs/<name>")
-def view_log(name: str) -> Response:
-    path = _safe_log_path(name)
-    if path is None:
-        return Response("not found", status=404)
-    log_name_json = json.dumps(name)
-    body = f"""
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>{html.escape(name)}</title>
-    <style>
-      body {{ font-family: Arial, sans-serif; margin: 24px; }}
-      pre {{ background: #111; color: #f5f5f5; padding: 12px; overflow-x: auto; height: 70vh; }}
-      a {{ color: #1a73e8; }}
-      .status {{ color: #666; margin-left: 8px; }}
-    </style>
-  </head>
-  <body>
-    <a href="{url_for('index')}">Back</a>
-    <span class="status" id="status">Connecting...</span>
-    <h2>{html.escape(name)}</h2>
-    <pre id="log"></pre>
-    <script>
-      const logName = {log_name_json};
-      const logEl = document.getElementById("log");
-      const statusEl = document.getElementById("status");
-      function wsUrl() {{
-        const protocol = location.protocol === "https:" ? "wss://" : "ws://";
-        return protocol + location.host + "/ws/logs/" + encodeURIComponent(logName);
-      }}
-      function connect() {{
-        const ws = new WebSocket(wsUrl());
-        statusEl.textContent = "Connected";
-        ws.onmessage = (evt) => {{
-          logEl.textContent += evt.data;
-          logEl.scrollTop = logEl.scrollHeight;
-        }};
-        ws.onclose = () => {{
-          statusEl.textContent = "Disconnected - reconnecting...";
-          setTimeout(connect, 1000);
-        }};
-        ws.onerror = () => {{
-          ws.close();
-        }};
-      }}
-      connect();
-    </script>
-  </body>
-</html>
-"""
-    return Response(body, mimetype="text/html")
+@app.get("/api/tasks")
+def api_tasks() -> Response:
+    with TASK_LOCK:
+        states = list(TASKS.values())
+    result = []
+    for s in sorted(states, key=lambda x: x.started_at, reverse=True):
+        result.append(_task_dict(s))
+    return Response(json.dumps({"tasks": result}), mimetype="application/json")
 
 
-@app.get("/api/predict-dates")
-def api_predict_dates() -> Response:
-    market = request.args.get("market", "KR").upper()
-    if market not in ("KR", "JP"):
-        return Response("invalid market", status=400)
-    dates = _fetch_predict_dates(market)
-    payload = json.dumps({"dates": dates})
-    return Response(payload, mimetype="application/json")
+@app.get("/api/tasks/<name>")
+def api_task_status(name: str) -> Response:
+    with TASK_LOCK:
+        state = TASKS.get(name)
+    if state is None:
+        return Response(json.dumps({"error": "not found"}), status=404, mimetype="application/json")
+    return Response(json.dumps(_task_dict(state)), mimetype="application/json")
 
 
-@app.get("/api/predict")
-def api_predict() -> Response:
-    market = request.args.get("market", "KR").upper()
-    as_of = request.args.get("as_of", "")
-    if market not in ("KR", "JP"):
-        return Response("invalid market", status=400)
-    if not as_of:
-        return Response("missing as_of", status=400)
-    rows = _fetch_predictions(market, as_of)
-    payload = json.dumps({"rows": rows}, default=_json_default)
-    return Response(payload, mimetype="application/json")
+def _task_dict(s: TaskState) -> Dict[str, object]:
+    if s.finished_at is None:
+        status = "running"
+    elif s.exit_code == 0:
+        status = "success"
+    else:
+        status = f"failed (exit={s.exit_code})"
+    return {
+        "name": s.name,
+        "log_name": s.log_name,
+        "started_at": s.started_at,
+        "finished_at": s.finished_at,
+        "exit_code": s.exit_code,
+        "status": status,
+    }
 
 
 @app.get("/api/scanner-defaults")
@@ -1472,19 +717,7 @@ def api_scanner() -> Response:
     return Response(payload, mimetype="application/json")
 
 
-@app.get("/api/series")
-def api_series() -> Response:
-    market = request.args.get("market", "KR").upper()
-    code = request.args.get("code", "")
-    as_of = request.args.get("as_of", "")
-    if market not in ("KR", "JP"):
-        return Response("invalid market", status=400)
-    if not code or not as_of:
-        return Response("missing code/as_of", status=400)
-    series = _fetch_series(market, code, as_of, limit=240)
-    payload = json.dumps({"series": series}, default=_json_default)
-    return Response(payload, mimetype="application/json")
-
+# ── WebSocket log tail ─────────────────────────────────────────────────────────
 
 def _tail_bytes(path: Path, max_bytes: int = 20000) -> Tuple[str, int]:
     with path.open("rb") as handle:
@@ -1497,7 +730,7 @@ def _tail_bytes(path: Path, max_bytes: int = 20000) -> Tuple[str, int]:
     if start > 0:
         nl = text.find("\n")
         if nl != -1:
-            text = text[nl + 1 :]
+            text = text[nl + 1:]
     return text, size
 
 
@@ -1544,8 +777,6 @@ async def ws_log(websocket: WebSocket) -> None:
         return
 
 
-
-
 def create_asgi_app() -> Starlette:
     mcp_app = mcp.streamable_http_app()
     lifespan = getattr(mcp_app, "lifespan", None)
@@ -1562,8 +793,6 @@ def create_asgi_app() -> Starlette:
 
 
 ASGI_APP = create_asgi_app()
-
-
 
 
 def main() -> None:
