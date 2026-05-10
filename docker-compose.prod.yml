@@ -26,6 +26,7 @@ services:
       PYTHON_API_URL: "http://stocksearcher:9999"
       LOG_DIR: "/data/log"
     volumes:
+      - ./config.ini:/app/webapp/config.ini:ro
       - /root/stock/data:/data
     ports:
       - "9998:80"
