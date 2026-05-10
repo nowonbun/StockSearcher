@@ -90,6 +90,17 @@ final class App
             $this->json(['series' => $this->fetchSeries($market, $code, $asOf, 240)]);
             return;
         }
+        if ($method === 'GET' && $path === '/api/series-weekly') {
+            $market = $this->market('KR');
+            $code = trim((string)($_GET['code'] ?? ''));
+            $asOf = trim((string)($_GET['as_of'] ?? ''));
+            if ($code === '' || $asOf === '') {
+                $this->text('missing code/as_of', 400);
+                return;
+            }
+            $this->json(['series' => $this->fetchWeeklySeries($market, $code, $asOf, 120)]);
+            return;
+        }
         if ($method === 'POST' && $path === '/api/batch/run') {
             $body = (string)file_get_contents('php://input');
             [$status, $payload] = $this->pythonRequest('POST', '/api/run', $body);
@@ -368,6 +379,36 @@ final class App
                 'low' => $this->num($r['Low']), 'close' => $this->num($r['Close']), 'volume' => $this->num($r['Volume']),
                 'ma5' => $this->num($r['5MvAvg']), 'ma20' => $this->num($r['20MvAvg']), 'ma60' => $this->num($r['60MvAvg']),
                 'ma120' => $this->num($r['120MvAvg']), 'ma240' => $this->num($r['240MvAvg']),
+                'bb_upper' => $this->num($r['UpperBand60_1']), 'bb_lower' => $this->num($r['LowerBand60_1']), 'bb_lower3' => $this->num($r['LowerBand60_3']),
+                'di_plus' => $this->num($r['DI_plus']), 'di_minus' => $this->num($r['DI_minus']), 'adx' => $this->num($r['ADX']),
+            ];
+        }
+        return $rows;
+    }
+
+    private function fetchWeeklySeries(string $market, string $code, string $asOf, int $limit): array
+    {
+        $pdo = $this->pdo($market);
+        $sql = "
+            SELECT date,Open,High,Low,Close,Volume,`5MvAvg`,`20MvAvg`,`60MvAvg`,
+                   UpperBand60_1,LowerBand60_1,LowerBand60_3,DI_plus,DI_minus,ADX
+            FROM {$this->weeklyDataTable($market)}
+            WHERE code=:code AND date<=:as_of
+            ORDER BY date DESC LIMIT :limit
+        ";
+        $st = $pdo->prepare($sql);
+        $st->bindValue(':code', $code);
+        $st->bindValue(':as_of', $asOf);
+        $st->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $st->execute();
+        $desc = $st->fetchAll();
+        $desc = array_reverse($desc);
+        $rows = [];
+        foreach ($desc as $r) {
+            $rows[] = [
+                'date' => substr((string)$r['date'], 0, 10), 'open' => $this->num($r['Open']), 'high' => $this->num($r['High']),
+                'low' => $this->num($r['Low']), 'close' => $this->num($r['Close']), 'volume' => $this->num($r['Volume']),
+                'ma5' => $this->num($r['5MvAvg']), 'ma20' => $this->num($r['20MvAvg']), 'ma60' => $this->num($r['60MvAvg']),
                 'bb_upper' => $this->num($r['UpperBand60_1']), 'bb_lower' => $this->num($r['LowerBand60_1']), 'bb_lower3' => $this->num($r['LowerBand60_3']),
                 'di_plus' => $this->num($r['DI_plus']), 'di_minus' => $this->num($r['DI_minus']), 'adx' => $this->num($r['ADX']),
             ];

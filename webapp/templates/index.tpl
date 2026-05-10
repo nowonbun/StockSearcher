@@ -109,6 +109,19 @@
       display: none;
     }
 
+    /* ── 로딩 스피너 ── */
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(138,170,212,0.2);
+      border-top-color: #4a9adc;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
     .panel.active {
       display: block;
     }
@@ -714,6 +727,23 @@
   </main>
 </div>
 
+<!-- ── 로딩 오버레이 ── -->
+<div id="loading-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(10,18,28,0.55); z-index:900; align-items:center; justify-content:center; flex-direction:column; gap:14px;">
+  <div class="loading-spinner"></div>
+  <div style="color:#8baad4; font-size:13px; letter-spacing:0.04em">로딩 중...</div>
+</div>
+
+<!-- ── 차트 모달 ── -->
+<div id="chart-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.78); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#1e2a3a; width:93%; max-width:1300px; height:84vh; position:relative; border-radius:8px; padding:14px 16px; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+    <div style="display:flex; align-items:center; margin-bottom:8px; gap:12px;">
+      <span id="chart-title" style="color:#c9d8ef; font-size:13px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+      <button id="chart-close-btn" style="background:none; border:1px solid #4a6899; color:#8baad4; font-size:13px; cursor:pointer; padding:3px 12px; border-radius:4px; flex-shrink:0;">닫기</button>
+    </div>
+    <div id="chart-plot" style="flex:1; min-height:0;"></div>
+  </div>
+</div>
+
 <!-- ══ 외부 라이브러리 ══ -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
@@ -722,6 +752,20 @@
 
 {literal}
 <script>
+
+// ── 로딩 오버레이 ─────────────────────────────────────────
+let _loadingDepth = 0;
+function showLoading() {
+  _loadingDepth++;
+  document.getElementById('loading-overlay').style.display = 'flex';
+}
+function hideLoading() {
+  if (--_loadingDepth <= 0) {
+    _loadingDepth = 0;
+    document.getElementById('loading-overlay').style.display = 'none';
+  }
+}
+
 
 // ── 숫자 포매터 ──────────────────────────────────────────
 const n = v => (v === null || v === undefined || v === '')
@@ -807,7 +851,7 @@ function makeRangeFilter(prefix) {
 
 
 // ── AG-Grid 초기화 ────────────────────────────────────────
-function createPredictGrid(elId, prefix) {
+function createPredictGrid(elId, prefix, market, isWeekly) {
   const filter = makeRangeFilter(prefix);
   return agGrid.createGrid(document.getElementById(elId), {
     columnDefs:              predictColDefs,
@@ -816,12 +860,14 @@ function createPredictGrid(elId, prefix) {
     suppressCellFocus:       true,
     rowHeight:               30,
     headerHeight:            34,
+    rowStyle:                { cursor: 'pointer' },
     isExternalFilterPresent: filter.isExternalFilterPresent,
     doesExternalFilterPass:  filter.doesExternalFilterPass,
+    onRowClicked:            e => openChart(market, e.data.code, e.data.name, e.data.data_cutoff, isWeekly),
   });
 }
 
-function createScannerGrid(elId) {
+function createScannerGrid(elId, market, isWeekly) {
   return agGrid.createGrid(document.getElementById(elId), {
     columnDefs:        scannerColDefs,
     rowData:           [],
@@ -829,7 +875,88 @@ function createScannerGrid(elId) {
     suppressCellFocus: true,
     rowHeight:         30,
     headerHeight:      34,
+    rowStyle:          { cursor: 'pointer' },
+    onRowClicked:      e => openChart(market, e.data.code, e.data.name, e.data.date, isWeekly),
   });
+}
+
+
+// ── 차트 열기 / 렌더링 ──────────────────────────────────
+async function openChart(market, code, name, asOf, isWeekly) {
+  const modal   = document.getElementById('chart-modal');
+  const plotDiv = document.getElementById('chart-plot');
+  document.getElementById('chart-title').textContent =
+    `${code}  ${name || ''}  (${isWeekly ? '주봉' : '일봉'})  —  기준일: ${asOf}`;
+  modal.style.display = 'flex';
+  plotDiv.innerHTML = '';
+
+  showLoading();
+  try {
+    const ep  = isWeekly ? '/api/series-weekly' : '/api/series';
+    const res = await fetch(`${ep}?market=${encodeURIComponent(market)}&code=${encodeURIComponent(code)}&as_of=${encodeURIComponent(asOf)}`);
+    const data = await res.json();
+    renderChart('chart-plot', data.series || [], isWeekly);
+  } catch (_) {
+    plotDiv.innerHTML = '<div style="color:#e05c5c;padding:40px;text-align:center;font-size:13px">데이터 로드 실패</div>';
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderChart(divId, series, isWeekly) {
+  if (!series.length) {
+    document.getElementById(divId).innerHTML =
+      '<div style="color:#8baad4;padding:40px;text-align:center;font-size:13px">데이터 없음</div>';
+    return;
+  }
+
+  const dates = series.map(d => d.date);
+  const maLine = (key, color, name) => ({
+    type: 'scatter', mode: 'lines', x: dates, y: series.map(d => d[key]),
+    name, line: { color, width: 1.2 }, hoverinfo: 'x+y',
+  });
+
+  const traces = [
+    {
+      type: 'candlestick',
+      x: dates,
+      open:  series.map(d => d.open),
+      high:  series.map(d => d.high),
+      low:   series.map(d => d.low),
+      close: series.map(d => d.close),
+      name: 'OHLC',
+      increasing: { line: { color: '#e05c5c' } },
+      decreasing: { line: { color: '#4a9adc' } },
+    },
+    maLine('ma5',  '#f0c040', 'MA5'),
+    maLine('ma20', '#60d080', 'MA20'),
+    maLine('ma60', '#e080c0', 'MA60'),
+    {
+      type: 'scatter', mode: 'lines', x: dates, y: series.map(d => d.bb_upper),
+      name: 'BB上', line: { color: '#80b8ff', width: 1, dash: 'dot' }, hoverinfo: 'skip',
+    },
+    {
+      type: 'scatter', mode: 'lines', x: dates, y: series.map(d => d.bb_lower),
+      name: 'BB下', line: { color: '#80b8ff', width: 1, dash: 'dot' },
+      fill: 'tonexty', fillcolor: 'rgba(128,184,255,0.06)', hoverinfo: 'skip',
+    },
+  ];
+
+  if (!isWeekly) {
+    traces.push(maLine('ma120', '#ffaa44', 'MA120'));
+  }
+
+  const layout = {
+    paper_bgcolor: '#1e2a3a',
+    plot_bgcolor:  '#1e2a3a',
+    font:   { color: '#c9d8ef', size: 11 },
+    xaxis:  { type: 'category', color: '#8baad4', rangeslider: { visible: false }, tickangle: -45, tickfont: { size: 10 } },
+    yaxis:  { color: '#8baad4', gridcolor: '#2a3d52', automargin: true },
+    legend: { orientation: 'h', y: 1.06, font: { size: 10 }, bgcolor: 'rgba(0,0,0,0)' },
+    margin: { t: 4, r: 8, b: 50, l: 60 },
+  };
+
+  Plotly.newPlot(divId, traces, layout, { responsive: true, displayModeBar: false });
 }
 
 
@@ -853,7 +980,7 @@ function initScannerTabs() {
       // KR 탭: 처음 열 때 지연 초기화 후 기본값 로드
       if (targetId === 'stab-kr') {
         if (!scannerKrGrid) {
-          scannerKrGrid = createScannerGrid('scanner-grid-kr');
+          scannerKrGrid = createScannerGrid('scanner-grid-kr', 'KR', false);
           await loadScannerDefaults('KR', 'scanner-kr-date', 'scanner-kr-trans-amount', 'scanner-kr-close-max');
         } else {
           scannerKrGrid.sizeColumnsToFit();
@@ -898,10 +1025,14 @@ async function searchPredicts(market, selectId, gridApi, endpoint = '/api/predic
   const asof = getSelectValue(selectId);
   if (!asof) return;
 
-  const res  = await fetch(`${endpoint}?market=${encodeURIComponent(market)}&as_of=${encodeURIComponent(asof)}`);
-  const data = await res.json();
-
-  gridApi.updateGridOptions({ rowData: data.rows || [] });
+  showLoading();
+  try {
+    const res  = await fetch(`${endpoint}?market=${encodeURIComponent(market)}&as_of=${encodeURIComponent(asof)}`);
+    const data = await res.json();
+    gridApi.updateGridOptions({ rowData: data.rows || [] });
+  } finally {
+    hideLoading();
+  }
 }
 
 
@@ -938,7 +1069,7 @@ function initSidebarNav() {
 
       if (targetId === 'panel-scanner') {
         if (!scannerJpGrid) {
-          scannerJpGrid = createScannerGrid('scanner-grid-jp');
+          scannerJpGrid = createScannerGrid('scanner-grid-jp', 'JP', false);
           await loadScannerDefaults('JP', 'scanner-jp-date', 'scanner-jp-trans-amount', 'scanner-jp-close-max');
         } else {
           scannerJpGrid.sizeColumnsToFit();
@@ -953,7 +1084,7 @@ function initSidebarNav() {
 
       if (targetId === 'panel-predict-weekly') {
         if (!jpWeeklyGrid) {
-          jpWeeklyGrid = createPredictGrid('predict-grid-jp-w', 'jp-w');
+          jpWeeklyGrid = createPredictGrid('predict-grid-jp-w', 'jp-w', 'JP', true);
           const dates = await loadDates('JP', 'as-of-jp-w', '/api/predict-dates-weekly');
           if (dates.length) await searchPredicts('JP', 'as-of-jp-w', jpWeeklyGrid, '/api/predict-weekly');
         } else {
@@ -965,7 +1096,7 @@ function initSidebarNav() {
 
       if (targetId === 'panel-scanner-weekly') {
         if (!scannerJpWeeklyGrid) {
-          scannerJpWeeklyGrid = createScannerGrid('scanner-grid-jp-w');
+          scannerJpWeeklyGrid = createScannerGrid('scanner-grid-jp-w', 'JP', true);
           await loadScannerDefaults('JP', 'scanner-w-jp-date', 'scanner-w-jp-trans-amount', 'scanner-w-jp-close-max', '/api/scanner-weekly-defaults');
         } else {
           scannerJpWeeklyGrid.sizeColumnsToFit();
@@ -995,7 +1126,7 @@ function initPredictWeeklyTabs() {
 
       if (targetId === 'ptab-w-kr') {
         if (!krWeeklyGrid) {
-          krWeeklyGrid = createPredictGrid('predict-grid-kr-w', 'kr-w');
+          krWeeklyGrid = createPredictGrid('predict-grid-kr-w', 'kr-w', 'KR', true);
           await searchPredicts('KR', 'as-of-kr-w', krWeeklyGrid, '/api/predict-weekly');
         } else {
           krWeeklyGrid.sizeColumnsToFit();
@@ -1025,7 +1156,7 @@ function initScannerWeeklyTabs() {
 
       if (targetId === 'stab-w-kr') {
         if (!scannerKrWeeklyGrid) {
-          scannerKrWeeklyGrid = createScannerGrid('scanner-grid-kr-w');
+          scannerKrWeeklyGrid = createScannerGrid('scanner-grid-kr-w', 'KR', true);
           await loadScannerDefaults('KR', 'scanner-w-kr-date', 'scanner-w-kr-trans-amount', 'scanner-w-kr-close-max', '/api/scanner-weekly-defaults');
         } else {
           scannerKrWeeklyGrid.sizeColumnsToFit();
@@ -1056,7 +1187,7 @@ function initPredictTabs() {
       // KR 탭: 처음 열 때 지연 초기화 후 자동 검색
       if (targetId === 'ptab-kr') {
         if (!krGrid) {
-          krGrid = createPredictGrid('predict-grid-kr', 'kr');
+          krGrid = createPredictGrid('predict-grid-kr', 'kr', 'KR', false);
           await searchPredicts('KR', 'as-of-kr', krGrid);
         } else {
           krGrid.sizeColumnsToFit();
@@ -1069,13 +1200,18 @@ function initPredictTabs() {
 
 // ── 스캐너 기본값 로드 ────────────────────────────────────
 async function loadScannerDefaults(market, dateId, transId, closeId, endpoint = '/api/scanner-defaults') {
-  const res  = await fetch(`${endpoint}?market=${encodeURIComponent(market)}`);
-  const data = await res.json();
+  showLoading();
+  try {
+    const res  = await fetch(`${endpoint}?market=${encodeURIComponent(market)}`);
+    const data = await res.json();
 
-  document.getElementById(dateId).value  = data.date || '';
-  document.getElementById(transId).value = data.trans_amnt_min ?? '';
-  document.getElementById(closeId).value = data.close_max ?? '';
-  M.updateTextFields();
+    document.getElementById(dateId).value  = data.date || '';
+    document.getElementById(transId).value = data.trans_amnt_min ?? '';
+    document.getElementById(closeId).value = data.close_max ?? '';
+    M.updateTextFields();
+  } finally {
+    hideLoading();
+  }
 }
 
 
@@ -1095,10 +1231,15 @@ async function searchScanner(market, dateId, transId, closeId, gridApi, endpoint
     trans_amnt_min: transAmnt,
     close_max:      closeMax,
   });
-  const res  = await fetch(`${endpoint}?${params}`);
-  const data = await res.json();
 
-  gridApi.updateGridOptions({ rowData: data.rows || [] });
+  showLoading();
+  try {
+    const res  = await fetch(`${endpoint}?${params}`);
+    const data = await res.json();
+    gridApi.updateGridOptions({ rowData: data.rows || [] });
+  } finally {
+    hideLoading();
+  }
 }
 
 
@@ -1112,20 +1253,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   initScannerWeeklyTabs();
   initBatchPanel();
 
+  // 차트 모달 닫기
+  document.getElementById('chart-close-btn').addEventListener('click', () => {
+    document.getElementById('chart-modal').style.display = 'none';
+  });
+  document.getElementById('chart-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+  });
+
   // JP 그리드만 즉시 초기화 (JP 탭이 기본 활성)
-  jpGrid = createPredictGrid('predict-grid-jp', 'jp');
+  jpGrid = createPredictGrid('predict-grid-jp', 'jp', 'JP', false);
 
-  // 일봉/주봉 날짜 목록 병렬 로드
-  const [jpDates] = await Promise.all([
-    loadDates('JP', 'as-of-jp'),
-    loadDates('KR', 'as-of-kr'),
-    loadDates('JP', 'as-of-jp-w', '/api/predict-dates-weekly'),
-    loadDates('KR', 'as-of-kr-w', '/api/predict-dates-weekly'),
-  ]);
+  showLoading();
+  try {
+    // 일봉/주봉 날짜 목록 병렬 로드
+    const [jpDates] = await Promise.all([
+      loadDates('JP', 'as-of-jp'),
+      loadDates('KR', 'as-of-kr'),
+      loadDates('JP', 'as-of-jp-w', '/api/predict-dates-weekly'),
+      loadDates('KR', 'as-of-kr-w', '/api/predict-dates-weekly'),
+    ]);
 
-  // JP 자동 검색
-  if (jpDates.length) {
-    await searchPredicts('JP', 'as-of-jp', jpGrid);
+    // JP 자동 검색 (searchPredicts 내부에서 showLoading이 중첩됨, depth로 처리됨)
+    if (jpDates.length) {
+      await searchPredicts('JP', 'as-of-jp', jpGrid);
+    }
+  } finally {
+    hideLoading();
   }
 });
 

@@ -165,7 +165,9 @@ def _filter_valid(series: stock_models.StockSeries) -> stock_models.StockSeries:
     )
 
 
-def build_calculated_rows(raw: dict[str, List[Any]]) -> List[List[Any]]:
+def build_calculated_rows(
+    raw: dict[str, List[Any]], allow_long_ma_null: bool = False
+) -> List[List[Any]]:
     """지표 계산을 적용한 행 단위 데이터 생성.
 
     반환 스키마(헤더 없음):
@@ -193,12 +195,17 @@ def build_calculated_rows(raw: dict[str, List[Any]]) -> List[List[Any]]:
         avg20 = _moving_average(cl, i, 20)
         avg50 = _moving_average(cl, i, 50)
         avg60 = _moving_average(cl, i, 60)
-        avg120 = _moving_average(cl, i, 120)
-        avg240 = _moving_average(cl, i, 240)
+        avg120 = None if allow_long_ma_null and i < 119 else _moving_average(cl, i, 120)
+        avg240 = None if allow_long_ma_null and i < 239 else _moving_average(cl, i, 240)
 
         # 원본 로직과 동일: 0인 경우만 스킵
         if (
-            avg5 == 0 or avg20 == 0 or avg50 == 0 or avg60 == 0 or avg120 == 0 or avg240 == 0
+            avg5 == 0
+            or avg20 == 0
+            or avg50 == 0
+            or avg60 == 0
+            or (avg120 == 0 if avg120 is not None else False)
+            or (avg240 == 0 if avg240 is not None else False)
         ):
             continue
 
@@ -368,7 +375,9 @@ def process_symbol(
     if raw is None:
         _log(f"{code} 데이터 수집 실패")
         return
-    rows = build_calculated_rows(raw)
+    rows = build_calculated_rows(
+        raw, allow_long_ma_null=(freq_type == stock_lib.FREQUENCY_TYPE_WEEK)
+    )
     insert_rows(table, code, rows, db_config, include_lowerband60_3)
 
 
