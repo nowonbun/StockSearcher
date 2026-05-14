@@ -5,7 +5,13 @@
       "Bash(Select-Object FullName, PSIsContainer)",
       "Bash(Format-Table -AutoSize)",
       "Bash(Out-String)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\work\\\\StockSearcher\\\\webapp\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(ConvertTo-Json)",
+      "mcp__mariadb__query",
+      "mcp__mariadb__health",
+      "mcp__mariadb__whoami"
     ]
   }
 }

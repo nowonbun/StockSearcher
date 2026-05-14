@@ -307,7 +307,9 @@ final class App
             SELECT p.data_cutoff,p.code,l.name,p.probability,d.Open,d.Close,d.Low,d.High,d.Volume
             FROM {$this->weeklyPredictTable($market)} p
             JOIN {$this->listTable($market)} l ON l.code = p.code
-            JOIN {$this->weeklyDataTable($market)} d ON d.code = p.code AND d.date = :as_of2
+            LEFT JOIN {$this->weeklyDataTable($market)} d ON d.code = p.code AND d.date = (
+                SELECT MAX(date) FROM {$this->weeklyDataTable($market)} WHERE date <= :as_of2
+            )
             WHERE p.data_cutoff = :as_of
             ORDER BY p.probability DESC
         ";
