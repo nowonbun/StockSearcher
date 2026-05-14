@@ -19,61 +19,55 @@ CREATE TABLE IF NOT EXISTS STOCK_LIST_KR (
 CREATE TABLE IF NOT EXISTS STOCK_DATA_KR (
     code          VARCHAR(12)  NOT NULL,
     date          DATE         NOT NULL,
-    Open          DECIMAL(20,4) DEFAULT NULL,
-    High          DECIMAL(20,4) DEFAULT NULL,
-    Low           DECIMAL(20,4) DEFAULT NULL,
-    Close         DECIMAL(20,4) DEFAULT NULL,
-    Volume        DECIMAL(24,4) DEFAULT NULL,
-    TransAmnt     DECIMAL(28,4) DEFAULT NULL,
-    5MvAvg        DECIMAL(20,4) DEFAULT NULL,
-    20MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    50MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    60MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    120MvAvg      DECIMAL(20,4) DEFAULT NULL,
-    240MvAvg      DECIMAL(20,4) DEFAULT NULL,
-    UpperBand60_1 DECIMAL(20,4) DEFAULT NULL,
-    LowerBand60_1 DECIMAL(20,4) DEFAULT NULL,
-    LowerBand60_3 DECIMAL(20,4) DEFAULT NULL,
-    DI_plus       DECIMAL(10,4) DEFAULT NULL,
-    DI_minus      DECIMAL(10,4) DEFAULT NULL,
-    ADX           DECIMAL(10,4) DEFAULT NULL,
+    Open          BIGINT       DEFAULT NULL,
+    High          BIGINT       DEFAULT NULL,
+    Low           BIGINT       DEFAULT NULL,
+    Close         BIGINT       DEFAULT NULL,
+    Volume        BIGINT       DEFAULT NULL,
+    TransAmnt     BIGINT       DEFAULT NULL,
+    5MvAvg        BIGINT       DEFAULT NULL,
+    20MvAvg       BIGINT       DEFAULT NULL,
+    50MvAvg       BIGINT       DEFAULT NULL,
+    60MvAvg       BIGINT       DEFAULT NULL,
+    120MvAvg      BIGINT       DEFAULT NULL,
+    240MvAvg      BIGINT       DEFAULT NULL,
+    UpperBand60_1 BIGINT       DEFAULT NULL,
+    LowerBand60_1 BIGINT       DEFAULT NULL,
+    LowerBand60_3 BIGINT       DEFAULT NULL,
+    DI_plus       BIGINT       DEFAULT NULL,
+    DI_minus      BIGINT       DEFAULT NULL,
+    ADX           BIGINT       DEFAULT NULL,
     create_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
     KEY idx_stock_data_kr_date (date),
-    KEY idx_stock_data_kr_date_trans (date, TransAmnt),
     CONSTRAINT fk_stock_data_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_KR (
     code          VARCHAR(12)  NOT NULL,
     date          DATE         NOT NULL,
-    Open          DECIMAL(20,4) DEFAULT NULL,
-    High          DECIMAL(20,4) DEFAULT NULL,
-    Low           DECIMAL(20,4) DEFAULT NULL,
-    Close         DECIMAL(20,4) DEFAULT NULL,
-    Volume        DECIMAL(24,4) DEFAULT NULL,
-    TransAmnt     DECIMAL(28,4) DEFAULT NULL,
-    5MvAvg        DECIMAL(20,4) DEFAULT NULL,
-    20MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    50MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    60MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    UpperBand60_1 DECIMAL(20,4) DEFAULT NULL,
-    LowerBand60_1 DECIMAL(20,4) DEFAULT NULL,
-    LowerBand60_3 DECIMAL(20,4) DEFAULT NULL,
-    DI_plus       DECIMAL(10,4) DEFAULT NULL,
-    DI_minus      DECIMAL(10,4) DEFAULT NULL,
-    ADX           DECIMAL(10,4) DEFAULT NULL,
+    Open          BIGINT       DEFAULT NULL,
+    High          BIGINT       DEFAULT NULL,
+    Low           BIGINT       DEFAULT NULL,
+    Close         BIGINT       DEFAULT NULL,
+    Volume        BIGINT       DEFAULT NULL,
+    TransAmnt     BIGINT       DEFAULT NULL,
+    5MvAvg        BIGINT       DEFAULT NULL,
+    20MvAvg       BIGINT       DEFAULT NULL,
+    50MvAvg       BIGINT       DEFAULT NULL,
+    60MvAvg       BIGINT       DEFAULT NULL,
+    UpperBand60_1 BIGINT       DEFAULT NULL,
+    LowerBand60_1 BIGINT       DEFAULT NULL,
+    LowerBand60_3 BIGINT       DEFAULT NULL,
+    DI_plus       BIGINT       DEFAULT NULL,
+    DI_minus      BIGINT       DEFAULT NULL,
+    ADX           BIGINT       DEFAULT NULL,
     create_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
     KEY idx_stock_data_week_kr_date (date),
-    KEY idx_stock_data_week_kr_date_trans (date, TransAmnt),
     CONSTRAINT fk_stock_data_week_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS STOCK_PREDICT_KR;
@@ -88,8 +82,6 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_KR (
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (data_cutoff, code),
     CONSTRAINT fk_stock_predict_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS STOCK_PREDICT_WEEK_KR (
@@ -103,8 +95,6 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_WEEK_KR (
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (data_cutoff, code),
     CONSTRAINT fk_stock_predict_week_kr_list FOREIGN KEY (code) REFERENCES STOCK_LIST_KR (code)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -130,61 +120,55 @@ CREATE TABLE IF NOT EXISTS STOCK_LIST_JP (
 CREATE TABLE IF NOT EXISTS STOCK_DATA_JP (
     code          VARCHAR(12)  NOT NULL,
     date          DATE         NOT NULL,
-    Open          DECIMAL(20,4) DEFAULT NULL,
-    High          DECIMAL(20,4) DEFAULT NULL,
-    Low           DECIMAL(20,4) DEFAULT NULL,
-    Close         DECIMAL(20,4) DEFAULT NULL,
-    Volume        DECIMAL(24,4) DEFAULT NULL,
-    TransAmnt     DECIMAL(28,4) DEFAULT NULL,
-    5MvAvg        DECIMAL(20,4) DEFAULT NULL,
-    20MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    50MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    60MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    120MvAvg      DECIMAL(20,4) DEFAULT NULL,
-    240MvAvg      DECIMAL(20,4) DEFAULT NULL,
-    UpperBand60_1 DECIMAL(20,4) DEFAULT NULL,
-    LowerBand60_1 DECIMAL(20,4) DEFAULT NULL,
-    LowerBand60_3 DECIMAL(20,4) DEFAULT NULL,
-    DI_plus       DECIMAL(10,4) DEFAULT NULL,
-    DI_minus      DECIMAL(10,4) DEFAULT NULL,
-    ADX           DECIMAL(10,4) DEFAULT NULL,
+    Open          BIGINT       DEFAULT NULL,
+    High          BIGINT       DEFAULT NULL,
+    Low           BIGINT       DEFAULT NULL,
+    Close         BIGINT       DEFAULT NULL,
+    Volume        BIGINT       DEFAULT NULL,
+    TransAmnt     BIGINT       DEFAULT NULL,
+    5MvAvg        BIGINT       DEFAULT NULL,
+    20MvAvg       BIGINT       DEFAULT NULL,
+    50MvAvg       BIGINT       DEFAULT NULL,
+    60MvAvg       BIGINT       DEFAULT NULL,
+    120MvAvg      BIGINT       DEFAULT NULL,
+    240MvAvg      BIGINT       DEFAULT NULL,
+    UpperBand60_1 BIGINT       DEFAULT NULL,
+    LowerBand60_1 BIGINT       DEFAULT NULL,
+    LowerBand60_3 BIGINT       DEFAULT NULL,
+    DI_plus       BIGINT       DEFAULT NULL,
+    DI_minus      BIGINT       DEFAULT NULL,
+    ADX           BIGINT       DEFAULT NULL,
     create_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
     KEY idx_stock_data_jp_date (date),
-    KEY idx_stock_data_jp_date_trans (date, TransAmnt),
     CONSTRAINT fk_stock_data_jp_list FOREIGN KEY (code) REFERENCES STOCK_LIST_JP (code)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS STOCK_DATA_WEEK_JP (
     code          VARCHAR(12)  NOT NULL,
     date          DATE         NOT NULL,
-    Open          DECIMAL(20,4) DEFAULT NULL,
-    High          DECIMAL(20,4) DEFAULT NULL,
-    Low           DECIMAL(20,4) DEFAULT NULL,
-    Close         DECIMAL(20,4) DEFAULT NULL,
-    Volume        DECIMAL(24,4) DEFAULT NULL,
-    TransAmnt     DECIMAL(28,4) DEFAULT NULL,
-    5MvAvg        DECIMAL(20,4) DEFAULT NULL,
-    20MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    50MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    60MvAvg       DECIMAL(20,4) DEFAULT NULL,
-    UpperBand60_1 DECIMAL(20,4) DEFAULT NULL,
-    LowerBand60_1 DECIMAL(20,4) DEFAULT NULL,
-    LowerBand60_3 DECIMAL(20,4) DEFAULT NULL,
-    DI_plus       DECIMAL(10,4) DEFAULT NULL,
-    DI_minus      DECIMAL(10,4) DEFAULT NULL,
-    ADX           DECIMAL(10,4) DEFAULT NULL,
+    Open          BIGINT       DEFAULT NULL,
+    High          BIGINT       DEFAULT NULL,
+    Low           BIGINT       DEFAULT NULL,
+    Close         BIGINT       DEFAULT NULL,
+    Volume        BIGINT       DEFAULT NULL,
+    TransAmnt     BIGINT       DEFAULT NULL,
+    5MvAvg        BIGINT       DEFAULT NULL,
+    20MvAvg       BIGINT       DEFAULT NULL,
+    50MvAvg       BIGINT       DEFAULT NULL,
+    60MvAvg       BIGINT       DEFAULT NULL,
+    UpperBand60_1 BIGINT       DEFAULT NULL,
+    LowerBand60_1 BIGINT       DEFAULT NULL,
+    LowerBand60_3 BIGINT       DEFAULT NULL,
+    DI_plus       BIGINT       DEFAULT NULL,
+    DI_minus      BIGINT       DEFAULT NULL,
+    ADX           BIGINT       DEFAULT NULL,
     create_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_date   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (code, date),
     KEY idx_stock_data_week_jp_date (date),
-    KEY idx_stock_data_week_jp_date_trans (date, TransAmnt),
     CONSTRAINT fk_stock_data_week_jp_list FOREIGN KEY (code) REFERENCES STOCK_LIST_JP (code)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS STOCK_PREDICT_JP;
@@ -217,4 +201,3 @@ CREATE TABLE IF NOT EXISTS STOCK_PREDICT_WEEK_JP (
         ON UPDATE CASCADE
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-

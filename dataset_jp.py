@@ -159,9 +159,10 @@ def _calculate_dmi(
 
 
 def _filter_valid(series: stock_models.StockSeries) -> stock_models.StockSeries:
-    """None 값이 포함된 캔들을 제거."""
+    """None 값이 포함되거나 Volume이 0인 캔들을 제거."""
     return stock_models.StockSeries(
-        c for c in series.candles if None not in (c.open, c.high, c.low, c.close, c.volume)
+        c for c in series.candles
+        if None not in (c.open, c.high, c.low, c.close, c.volume) and float(c.volume) > 0
     )
 
 
@@ -216,24 +217,24 @@ def build_calculated_rows(
         rows.append(
             [
                 datetime.fromtimestamp(ts[i] / 1000).strftime("%Y-%m-%d"),
-                op[i],
-                hi[i],
-                lo[i],
-                cl[i],
-                vo[i],
-                cl[i] * vo[i],
-                avg5,
-                avg20,
-                avg50,
-                avg60,
-                avg120,
-                avg240,
-                up60_1,
-                lo60_1,
-                lo60_3,
-                di_plus[i],
-                di_minus[i],
-                adx[i],
+                round(op[i]),
+                round(hi[i]),
+                round(lo[i]),
+                round(cl[i]),
+                round(vo[i]),
+                round(cl[i] * vo[i]),
+                round(avg5),
+                round(avg20),
+                round(avg50),
+                round(avg60),
+                round(avg120) if avg120 is not None else None,
+                round(avg240) if avg240 is not None else None,
+                round(up60_1),
+                round(lo60_1),
+                round(lo60_3),
+                round(di_plus[i]) if di_plus[i] is not None else None,
+                round(di_minus[i]) if di_minus[i] is not None else None,
+                round(adx[i]) if adx[i] is not None else None,
             ]
         )
     return rows
@@ -272,15 +273,15 @@ def fetch_stock_raw(
 # DB 저장
 # ----------------------------
 def _build_insert_query(
-    table: str, include_lowerband60_3: bool
+    table: str, include_lowerband60_3: bool, fast: bool = False, include_long_ma: bool = True
 ) -> Tuple[str, int]:
-    """파라미터 바인딩용 INSERT ... ON DUPLICATE KEY UPDATE 쿼리 생성.
+    """파라미터 바인딩용 INSERT 쿼리 생성.
+
+    fast=True: INSERT IGNORE (ON DUPLICATE KEY UPDATE·FK 체크 생략 — 벌크 초기 적재용)
+    fast=False: INSERT ... ON DUPLICATE KEY UPDATE (기본 upsert)
+    include_long_ma=False: 120mvavg/240mvavg 제외 (주봉 테이블 — 해당 컬럼 없음)
 
     반환: (query, value_count)
-    입력 데이터 튜플 포맷:
-        (code, date, open, high, low, close, volume, transamnt,
-         5mvavg, 20mvavg, 50mvavg, 60mvavg, 120mvavg, 240mvavg,
-         upperband60_1, lowerband60_1[, lowerband60_3], di_plus, di_minus, adx)
     """
     cols = [
         "code",
@@ -295,11 +296,10 @@ def _build_insert_query(
         "20mvavg",
         "50mvavg",
         "60mvavg",
-        "120mvavg",
-        "240mvavg",
-        "upperband60_1",
-        "lowerband60_1",
     ]
+    if include_long_ma:
+        cols.extend(["120mvavg", "240mvavg"])
+    cols.extend(["upperband60_1", "lowerband60_1"])
     if include_lowerband60_3:
         cols.append("lowerband60_3")
     cols.extend(["di_plus", "di_minus", "adx"])
@@ -307,13 +307,19 @@ def _build_insert_query(
     placeholders = ",".join(["%s"] * len(cols))
     insert_cols = ", ".join(cols) + ", create_date, update_date"
 
-    query = (
-        f"INSERT INTO {table} ({insert_cols}) VALUES ("
-        f"{placeholders}, now(), now()) "
-        "ON DUPLICATE KEY UPDATE "
-        + ", ".join([f"{c} = VALUES({c})" for c in cols[2:]])
-        + ", update_date = now()"
-    )
+    if fast:
+        query = (
+            f"INSERT IGNORE INTO {table} ({insert_cols}) VALUES ("
+            f"{placeholders}, now(), now())"
+        )
+    else:
+        query = (
+            f"INSERT INTO {table} ({insert_cols}) VALUES ("
+            f"{placeholders}, now(), now()) "
+            "ON DUPLICATE KEY UPDATE "
+            + ", ".join([f"{c} = VALUES({c})" for c in cols[2:]])
+            + ", update_date = now()"
+        )
     return query, len(cols)
 
 
@@ -323,25 +329,37 @@ def insert_rows(
     rows: List[List[Any]],
     db_config: dict,
     include_lowerband60_3: bool,
+    fast: bool = False,
+    include_long_ma: bool = True,
 ) -> None:
     if not rows:
         _log(f"{code} 저장할 데이터 없음")
         return
 
-    query, value_count = _build_insert_query(table, include_lowerband60_3)
+    query, value_count = _build_insert_query(table, include_lowerband60_3, fast, include_long_ma)
 
+    # r 레이아웃: [date, open, high, low, close, vol, transamnt,
+    #              5mv(7), 20mv(8), 50mv(9), 60mv(10), 120mv(11), 240mv(12),
+    #              upband(13), loband1(14), loband3(15), di+(16), di-(17), adx(18)]
     payload: List[Tuple[Any, ...]] = []
     for r in rows:
-        base = [code] + r[:15]  # date..lowerband60_1
+        base = [code] + r[:11]  # date..60mvavg
+        if include_long_ma:
+            base.extend(r[11:13])  # 120mvavg, 240mvavg
+        base.extend(r[13:15])  # upperband60_1, lowerband60_1
         if include_lowerband60_3:
-            base.append(r[15])
-        base.extend(r[16:19])
+            base.append(r[15])  # lowerband60_3
+        base.extend(r[16:19])  # di_plus, di_minus, adx
         payload.append(tuple(base))
 
     conn = mysql.connector.connect(**db_config)
     try:
         with conn.cursor() as cur:
+            if fast:
+                cur.execute("SET FOREIGN_KEY_CHECKS=0")
             cur.executemany(query, payload)
+            if fast:
+                cur.execute("SET FOREIGN_KEY_CHECKS=1")
         conn.commit()
         _log(f"{code} {table} {len(payload)}건 저장")
     except Exception as e:
@@ -363,6 +381,7 @@ def process_symbol(
     freq_type: str,
     table: str,
     include_lowerband60_3: bool,
+    fast: bool = False,
 ) -> None:
     raw = fetch_stock_raw(
         driver,
@@ -375,13 +394,25 @@ def process_symbol(
     if raw is None:
         _log(f"{code} 데이터 수집 실패")
         return
-    rows = build_calculated_rows(
-        raw, allow_long_ma_null=(freq_type == stock_lib.FREQUENCY_TYPE_WEEK)
+    is_weekly = freq_type == stock_lib.FREQUENCY_TYPE_WEEK
+    rows = build_calculated_rows(raw, allow_long_ma_null=is_weekly)
+    insert_rows(table, code, rows, db_config, include_lowerband60_3, fast, include_long_ma=not is_weekly)
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-week", action="store_true", help="주봉 수집 건너뜀")
+    parser.add_argument(
+        "--fast-insert",
+        action="store_true",
+        help="INSERT IGNORE + FK 체크 비활성화 (벌크 초기 적재용)",
     )
-    insert_rows(table, code, rows, db_config, include_lowerband60_3)
+    args = parser.parse_args()
+    include_week = not args.no_week
+    fast = args.fast_insert
 
-
-def main(include_week: bool = True) -> None:
     global _LOGGER
     common.check_directory(static.dir)
     common.check_directory(os.path.join(static.dir, "log"))
@@ -421,6 +452,7 @@ def main(include_week: bool = True) -> None:
                     stock_lib.FREQUENCY_TYPE_DAY,
                     "STOCK_DATA_JP",
                     True,  # lowerband60_3 포함
+                    fast,
                 )
                 if include_week:
                     # 주봉
@@ -432,6 +464,7 @@ def main(include_week: bool = True) -> None:
                         stock_lib.FREQUENCY_TYPE_WEEK,
                         "STOCK_DATA_WEEK_JP",
                         False,  # weekly 테이블은 lowerband60_3 미포함(기존 동작 준수)
+                        fast,
                     )
             except Exception as e:
                 _log(str(e))

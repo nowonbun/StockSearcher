@@ -319,6 +319,7 @@ def build_rows_from_df(df: pd.DataFrame, allow_long_ma_null: bool = False) -> Li
     if not allow_long_ma_null:
         needed.extend(["120MvAvg", "240MvAvg"])
     work = work.dropna(subset=needed)
+    work = work[work["Volume"] > 0]
     if work.empty:
         return []
 
@@ -336,24 +337,24 @@ def build_rows_from_df(df: pd.DataFrame, allow_long_ma_null: bool = False) -> Li
         rows.append(
             [
                 date_str,
-                float(row["Open"]),
-                float(row["High"]),
-                float(row["Low"]),
-                float(row["Close"]),
-                float(row["Volume"]),
-                float(row["TransAmnt"]),
-                float(row["5MvAvg"]),
-                float(row["20MvAvg"]),
-                float(row["50MvAvg"]),
-                float(row["60MvAvg"]),
-                float(row["120MvAvg"]) if pd.notna(row["120MvAvg"]) else None,
-                float(row["240MvAvg"]) if pd.notna(row["240MvAvg"]) else None,
-                float(row["UpperBand60_1"]),
-                float(row["LowerBand60_1"]),
-                float(row["LowerBand60_3"]),
-                float(row["DI_plus"]),
-                float(row["DI_minus"]),
-                float(row["ADX"]),
+                round(float(row["Open"])),
+                round(float(row["High"])),
+                round(float(row["Low"])),
+                round(float(row["Close"])),
+                round(float(row["Volume"])),
+                round(float(row["TransAmnt"])),
+                round(float(row["5MvAvg"])),
+                round(float(row["20MvAvg"])),
+                round(float(row["50MvAvg"])),
+                round(float(row["60MvAvg"])),
+                round(float(row["120MvAvg"])) if pd.notna(row["120MvAvg"]) else None,
+                round(float(row["240MvAvg"])) if pd.notna(row["240MvAvg"]) else None,
+                round(float(row["UpperBand60_1"])),
+                round(float(row["LowerBand60_1"])),
+                round(float(row["LowerBand60_3"])),
+                round(float(row["DI_plus"])),
+                round(float(row["DI_minus"])),
+                round(float(row["ADX"])),
             ]
         )
     return rows
@@ -362,13 +363,12 @@ def build_rows_from_df(df: pd.DataFrame, allow_long_ma_null: bool = False) -> Li
 # ----------------------------
 # DB 적재
 # ----------------------------
-def _build_insert_query(table: str) -> Tuple[str, int]:
-    """INSERT ... ON DUPLICATE KEY UPDATE 쿼리 생성.
+def _build_insert_query(table: str, fast: bool = False, include_long_ma: bool = True) -> Tuple[str, int]:
+    """INSERT 쿼리 생성.
 
-    값 포맷:
-        (code, date, Open, High, Low, Close, Volume, TransAmnt,
-         5MvAvg, 20MvAvg, 50MvAvg, 60MvAvg, 120MvAvg, 240MvAvg,
-         UpperBand60_1, LowerBand60_1, LowerBand60_3, DI_plus, DI_minus, ADX)
+    fast=True: INSERT IGNORE (ON DUPLICATE KEY UPDATE·FK 체크 생략 — 벌크 초기 적재용)
+    fast=False: INSERT ... ON DUPLICATE KEY UPDATE (기본 upsert)
+    include_long_ma=False: 120MvAvg/240MvAvg 제외 (주봉 테이블 — 해당 컬럼 없음)
     """
     cols = [
         "code",
@@ -383,45 +383,63 @@ def _build_insert_query(table: str) -> Tuple[str, int]:
         "20MvAvg",
         "50MvAvg",
         "60MvAvg",
-        "120MvAvg",
-        "240MvAvg",
+    ]
+    if include_long_ma:
+        cols.extend(["120MvAvg", "240MvAvg"])
+    cols.extend([
         "UpperBand60_1",
         "LowerBand60_1",
         "LowerBand60_3",
         "DI_plus",
         "DI_minus",
         "ADX",
-    ]
+    ])
 
     placeholders = ",".join(["%s"] * len(cols))
     insert_cols = ", ".join(cols) + ", create_date, update_date"
-    query = (
-        f"INSERT INTO {table} ({insert_cols}) VALUES ("
-        f"{placeholders}, now(), now()) "
-        "ON DUPLICATE KEY UPDATE "
-        + ", ".join([f"{c} = VALUES({c})" for c in cols[2:]])
-        + ", update_date = now()"
-    )
+    if fast:
+        query = (
+            f"INSERT IGNORE INTO {table} ({insert_cols}) VALUES ("
+            f"{placeholders}, now(), now())"
+        )
+    else:
+        query = (
+            f"INSERT INTO {table} ({insert_cols}) VALUES ("
+            f"{placeholders}, now(), now()) "
+            "ON DUPLICATE KEY UPDATE "
+            + ", ".join([f"{c} = VALUES({c})" for c in cols[2:]])
+            + ", update_date = now()"
+        )
     return query, len(cols)
 
 
-def insert_rows(table: str, code: str, rows: List[List[Any]]) -> None:
+def insert_rows(table: str, code: str, rows: List[List[Any]], fast: bool = False, include_long_ma: bool = True) -> None:
     if not rows:
         _log(f"{code} {table}: 적재할 데이터 없음")
         return
 
-    query, _ = _build_insert_query(table)
+    query, _ = _build_insert_query(table, fast, include_long_ma)
+    # r 레이아웃: [date, Open, High, Low, Close, Vol, TransAmnt,
+    #              5mv(7), 20mv(8), 50mv(9), 60mv(10), 120mv(11), 240mv(12),
+    #              UpperBand(13), LowerBand1(14), LowerBand3(15), DI+(16), DI-(17), ADX(18)]
     payload: List[Tuple[Any, ...]] = []
     for r in rows:
-        base = [code] + r  # r는 date..LowerBand60_3 총 16개
+        base = [code] + r[:11]  # date..60MvAvg
+        if include_long_ma:
+            base.extend(r[11:13])  # 120MvAvg, 240MvAvg
+        base.extend(r[13:])  # UpperBand60_1..ADX
         payload.append(tuple(base))
 
     conn = mysql.connector.connect(**static.db_config_kr)
     try:
         with conn.cursor() as cur:
+            if fast:
+                cur.execute("SET FOREIGN_KEY_CHECKS=0")
             cur.executemany(query, payload)
+            if fast:
+                cur.execute("SET FOREIGN_KEY_CHECKS=1")
         conn.commit()
-        _log(f"{code} {table}: {len(payload)}건 upsert")
+        _log(f"{code} {table}: {len(payload)}건 {'insert' if fast else 'upsert'}")
     except Exception as e:
         conn.rollback()
         _log(f"{code} {table} 저장 오류: {e}")
@@ -433,12 +451,12 @@ def insert_rows(table: str, code: str, rows: List[List[Any]]) -> None:
 # ----------------------------
 # 수집 파이프라인
 # ----------------------------
-def process_symbol(code: str, include_week: bool = False) -> None:
+def process_symbol(code: str, include_week: bool = False, fast: bool = False) -> None:
     """단일 심볼(code)에 대해 일/주봉 수집 및 적재 수행."""
     # 일봉
     df_daily = fdr.DataReader(code, static.start_date, static.end_date)
     rows = build_rows_from_df(df_daily)
-    insert_rows("STOCK_DATA_KR", code, rows)
+    insert_rows("STOCK_DATA_KR", code, rows, fast, include_long_ma=True)
 
     # 주봉 (금요일 기준 주간 집계)
     if include_week and df_daily is not None and not df_daily.empty:
@@ -447,10 +465,23 @@ def process_symbol(code: str, include_week: bool = False) -> None:
         )
         weekly = weekly.dropna(subset=["Close"])  # 공휴일 등 거래 없는 주 제거 (ADX 스무딩 오염 방지)
         w_rows = build_rows_from_df(weekly, allow_long_ma_null=True)
-        insert_rows("STOCK_DATA_WEEK_KR", code, w_rows)
+        insert_rows("STOCK_DATA_WEEK_KR", code, w_rows, fast, include_long_ma=False)
 
 
-def main(include_week: bool = True) -> None:
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-week", action="store_true", help="주봉 수집 건너뜀")
+    parser.add_argument(
+        "--fast-insert",
+        action="store_true",
+        help="INSERT IGNORE + FK 체크 비활성화 (벌크 초기 적재용)",
+    )
+    args = parser.parse_args()
+    include_week = not args.no_week
+    fast = args.fast_insert
+
     global _LOGGER
     common.check_directory(static.dir)
     common.check_directory(os.path.join(static.dir, "log"))
@@ -464,7 +495,7 @@ def main(include_week: bool = True) -> None:
     max_workers = 5
     _log(f"수집 대상 종목 수: {len(codes)} (max_workers={max_workers})")
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        executor.map(partial(process_symbol, include_week=include_week), codes)
+        executor.map(partial(process_symbol, include_week=include_week, fast=fast), codes)
 
 
 if __name__ == "__main__":
