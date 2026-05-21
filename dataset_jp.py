@@ -13,9 +13,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from typing import Any, Iterable, List, Optional, Sequence, Tuple
+
+_JST = timezone(timedelta(hours=9))
 
 import mysql.connector
 import pandas as pd
@@ -166,8 +168,23 @@ def _filter_valid(series: stock_models.StockSeries) -> stock_models.StockSeries:
     )
 
 
+def _ts_to_date(ts_ms: int, normalize_to_monday: bool = False) -> str:
+    """밀리초 타임스탬프를 JST 기준 날짜 문자열로 변환.
+
+    normalize_to_monday=True 이면 해당 주의 월요일 날짜를 반환(주봉 정규화용).
+    Yahoo Finance JP 주봉의 타임스탬프는 '월요일 00:00 JST = 일요일 15:00 UTC'이므로
+    UTC 환경에서 fromtimestamp()를 쓰면 일요일로 저장됨 → JST 고정으로 방지.
+    진행 중인 주의 봉은 실행 날짜 타임스탬프를 쓰므로 월요일 정규화로 중복 방지.
+    """
+    dt = datetime.fromtimestamp(ts_ms / 1000, tz=_JST)
+    if normalize_to_monday:
+        dt = dt - timedelta(days=dt.weekday())
+    return dt.strftime("%Y-%m-%d")
+
+
 def build_calculated_rows(
-    raw: dict[str, List[Any]], allow_long_ma_null: bool = False
+    raw: dict[str, List[Any]], allow_long_ma_null: bool = False,
+    normalize_to_monday: bool = False,
 ) -> List[List[Any]]:
     """지표 계산을 적용한 행 단위 데이터 생성.
 
@@ -216,7 +233,7 @@ def build_calculated_rows(
         # 이동평균 구간이 충분하면 볼린저도 충분하므로 0 체크는 생략
         rows.append(
             [
-                datetime.fromtimestamp(ts[i] / 1000).strftime("%Y-%m-%d"),
+                _ts_to_date(ts[i], normalize_to_monday),
                 round(op[i]),
                 round(hi[i]),
                 round(lo[i]),
@@ -395,7 +412,7 @@ def process_symbol(
         _log(f"{code} 데이터 수집 실패")
         return
     is_weekly = freq_type == stock_lib.FREQUENCY_TYPE_WEEK
-    rows = build_calculated_rows(raw, allow_long_ma_null=is_weekly)
+    rows = build_calculated_rows(raw, allow_long_ma_null=is_weekly, normalize_to_monday=is_weekly)
     insert_rows(table, code, rows, db_config, include_lowerband60_3, fast, include_long_ma=not is_weekly)
 
 
