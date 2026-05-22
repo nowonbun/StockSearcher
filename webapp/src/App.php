@@ -352,9 +352,9 @@ final class App
             SELECT sd.date,sd.code,sl.name,sd.Close,sd.UpperBand60_1,sd.TransAmnt AS transAmnt,(sd.Close/NULLIF(sd.UpperBand60_1,0)) AS upperband_ratio
             FROM {$this->weeklyDataTable($market)} sd
             JOIN {$this->listTable($market)} sl ON sl.code = sd.code
-            WHERE sd.date=:d AND sd.Close > sd.UpperBand60_1 AND sd.Close < sd.UpperBand60_1 * 1.2
+            WHERE sd.date=:d AND sd.Close > sd.UpperBand60_1
               AND sd.TransAmnt > :t AND sd.Close < :c
-            ORDER BY sd.TransAmnt DESC LIMIT 20
+            ORDER BY sd.TransAmnt DESC
         ";
         $st = $pdo->prepare($sql);
         $st->execute([':d' => $scanDate, ':t' => $trans, ':c' => $closeMax]);
@@ -376,9 +376,9 @@ final class App
             SELECT sd.date,sd.code,sl.name,sd.Close,sd.UpperBand60_1,sd.transAmnt,(sd.Close/NULLIF(sd.UpperBand60_1,0)) AS upperband_ratio
             FROM {$this->dataTable($market)} sd
             JOIN {$this->listTable($market)} sl ON sl.code = sd.code
-            WHERE sd.date=:d AND sd.Close > sd.UpperBand60_1 AND sd.Close < sd.UpperBand60_1 * 1.2
+            WHERE sd.date=:d AND sd.Close > sd.UpperBand60_1
               AND sd.transAmnt > :t AND sd.Close < :c
-            ORDER BY sd.transAmnt DESC LIMIT 20
+            ORDER BY sd.transAmnt DESC
         ";
         $st = $pdo->prepare($sql);
         $st->execute([':d' => $scanDate, ':t' => $trans, ':c' => $closeMax]);
