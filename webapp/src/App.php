@@ -203,6 +203,11 @@ final class App
         }
     }
 
+    private function etfFilter(string $market, string $alias = 'l'): string
+    {
+        return $market === 'JP' ? " AND {$alias}.stocktype != 'ETF・ETN'" : '';
+    }
+
     private function predictTable(string $market): string { return $market === 'JP' ? 'STOCK_PREDICT_JP' : 'STOCK_PREDICT_KR'; }
     private function dataTable(string $market): string { return $market === 'JP' ? 'STOCK_DATA_JP' : 'STOCK_DATA_KR'; }
     private function listTable(string $market): string { return $market === 'JP' ? 'STOCK_LIST_JP' : 'STOCK_LIST_KR'; }
@@ -227,7 +232,7 @@ final class App
             FROM {$this->predictTable($market)} p
             JOIN {$this->listTable($market)} l ON l.code = p.code
             JOIN {$this->dataTable($market)} d ON d.code = p.code AND d.date = :as_of2
-            WHERE p.data_cutoff = :as_of
+            WHERE p.data_cutoff = :as_of{$this->etfFilter($market)}
             ORDER BY p.probability DESC
         ";
         $st = $pdo->prepare($sql);
@@ -310,7 +315,7 @@ final class App
             LEFT JOIN {$this->weeklyDataTable($market)} d ON d.code = p.code AND d.date = (
                 SELECT MAX(date) FROM {$this->weeklyDataTable($market)} WHERE date <= :as_of2
             )
-            WHERE p.data_cutoff = :as_of
+            WHERE p.data_cutoff = :as_of{$this->etfFilter($market)}
             ORDER BY p.probability DESC
         ";
         $st = $pdo->prepare($sql);
@@ -353,7 +358,7 @@ final class App
             FROM {$this->weeklyDataTable($market)} sd
             JOIN {$this->listTable($market)} sl ON sl.code = sd.code
             WHERE sd.date=:d AND sd.Close > sd.UpperBand60_1
-              AND sd.TransAmnt > :t AND sd.Close < :c
+              AND sd.TransAmnt > :t AND sd.Close < :c{$this->etfFilter($market, 'sl')}
             ORDER BY sd.TransAmnt DESC
         ";
         $st = $pdo->prepare($sql);
@@ -377,7 +382,7 @@ final class App
             FROM {$this->dataTable($market)} sd
             JOIN {$this->listTable($market)} sl ON sl.code = sd.code
             WHERE sd.date=:d AND sd.Close > sd.UpperBand60_1
-              AND sd.transAmnt > :t AND sd.Close < :c
+              AND sd.transAmnt > :t AND sd.Close < :c{$this->etfFilter($market, 'sl')}
             ORDER BY sd.transAmnt DESC
         ";
         $st = $pdo->prepare($sql);
