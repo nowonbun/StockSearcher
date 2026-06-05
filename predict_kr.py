@@ -70,7 +70,6 @@ def predict_probs(
     log_every: int,
     min_trans_amnt_sum: float | None,
     liquidity_days: int,
-    require_uptrend: bool,
     min_high_52w_ratio: float | None,
     min_close_vs_ma20: float | None,
     min_close_vs_ma60: float | None,
@@ -118,8 +117,6 @@ def predict_probs(
                 continue
             seq, trend_metrics = seq_info
 
-            if require_uptrend and trend_metrics["ma_alignment"] < 1.0:
-                continue
             if min_high_52w_ratio is not None and trend_metrics["high_52w_ratio"] < min_high_52w_ratio:
                 continue
             if min_close_vs_ma20 is not None and trend_metrics["close_vs_ma20"] < min_close_vs_ma20:
@@ -162,7 +159,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dim-feedforward", type=int, default=512)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K_KR_TREND_V1)
-    parser.add_argument("--require-uptrend", action=argparse.BooleanOptionalAction, default=True, help="정배열 상승추세 조건 사용 여부")
     parser.add_argument("--min-high-52w-ratio", type=float, default=0.85, help="52주 고점 근접 비율 최소값")
     parser.add_argument("--min-close-vs-ma20", type=float, default=-0.02, help="close_vs_ma20 최소값 (model_kr.py trend label 기본값과 일치)")
     parser.add_argument("--min-close-vs-ma60", type=float, default=None, help="close_vs_ma60 최소값 (학습 라벨 외 추가 보수 필터가 필요할 때만 사용)")
@@ -220,7 +216,6 @@ def main() -> None:
         args.log_every,
         args.min_trans_amnt_sum,
         args.liquidity_days,
-        args.require_uptrend,
         args.min_high_52w_ratio,
         args.min_close_vs_ma20,
         args.min_close_vs_ma60,

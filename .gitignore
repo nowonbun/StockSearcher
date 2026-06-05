@@ -15,6 +15,7 @@ backup/model_kr.pt.4
 config.toml
 /*.pt
 model_bk/
+models/
 webapp/templates_c
 /.claude
 .claude/settings.local.json
