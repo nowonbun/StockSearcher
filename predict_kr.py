@@ -148,7 +148,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end-date", default=static.end_date)
     parser.add_argument("--seq-len", type=int, default=120)
     parser.add_argument("--horizon-days", type=int, default=20)
-    parser.add_argument("--rise-threshold", type=float, default=0.12)
+    parser.add_argument("--rise-threshold", type=float, default=0.08)
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000)
     parser.add_argument("--liquidity-days", type=int, default=5)
     parser.add_argument("--as-of", default=str(date.today()), help="추론 기준일 (YYYY-MM-DD)")

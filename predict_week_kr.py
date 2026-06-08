@@ -20,7 +20,7 @@ from model_week_kr import (
 )
 
 DEFAULT_MODEL_KR_TREND_V1 = "model_week_kr.pt"
-DEFAULT_DECISION_THRESHOLD_KR_TREND_V1 = 0.50
+DEFAULT_DECISION_THRESHOLD_KR_TREND_V1 = 0.45
 DEFAULT_TOP_K_KR_TREND_V1 = 30
 
 
@@ -143,8 +143,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start-date", default=static.start_date)
     parser.add_argument("--end-date", default=static.end_date)
     parser.add_argument("--seq-len", type=int, default=120)
-    parser.add_argument("--horizon-days", type=int, default=8)
-    parser.add_argument("--rise-threshold", type=float, default=0.12)
+    parser.add_argument("--horizon-days", type=int, default=20)
+    parser.add_argument("--rise-threshold", type=float, default=0.08)
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000)
     parser.add_argument("--liquidity-days", type=int, default=5)
     parser.add_argument("--as-of", default=str(date.today()), help="추론 기준일 (YYYY-MM-DD)")
@@ -155,11 +155,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dim-feedforward", type=int, default=512)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K_KR_TREND_V1)
-    parser.add_argument("--min-high-52w-ratio", type=float, default=None, help="52주 고점 근접 비율 최소값")
-    parser.add_argument("--min-close-vs-ma20", type=float, default=None, help="close_vs_ma20 최소값 (model_kr.py trend label 기본값과 일치)")
+    parser.add_argument("--min-high-52w-ratio", type=float, default=0.85, help="52주 고점 근접 비율 최소값")
+    parser.add_argument("--min-close-vs-ma20", type=float, default=-0.02, help="close_vs_ma20 최소값 (model_week_kr.py trend label 기본값과 일치)")
     parser.add_argument("--min-close-vs-ma60", type=float, default=None, help="close_vs_ma60 최소값 (학습 라벨 외 추가 보수 필터가 필요할 때만 사용)")
-    parser.add_argument("--min-ma20-slope", type=float, default=None, help="ma20_slope_5 최소값 (model_kr.py trend label 기본값과 일치)")
-    parser.add_argument("--min-ma60-slope", type=float, default=None, help="ma60_slope_10 최소값 (model_kr.py trend label 기본값과 일치)")
+    parser.add_argument("--min-ma20-slope", type=float, default=-0.01, help="ma20_slope_5 최소값 (model_week_kr.py trend label 기본값과 일치)")
+    parser.add_argument("--min-ma60-slope", type=float, default=-0.01, help="ma60_slope_10 최소값 (model_week_kr.py trend label 기본값과 일치)")
     parser.add_argument("--min-prob", type=float, default=None)
     parser.add_argument("--decision-threshold", type=float, default=DEFAULT_DECISION_THRESHOLD_KR_TREND_V1)
     parser.add_argument("--log-every", type=int, default=200)

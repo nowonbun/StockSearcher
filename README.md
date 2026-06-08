@@ -295,13 +295,14 @@ docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.
 
 JP 일봉 모델은 향후 N 거래일 내 **목표 수익률을 달성하고 기간 내 최대 낙폭 조건을 지킬 확률**을 예측합니다.
 기본 타깃: "20일 내 +8% 이상 상승", 기간 내 최대 낙폭 10% 이내입니다.
+기본 실행은 2000-01-01부터 데이터를 사용합니다.
 `--trend-label-filter`를 켜면 52주 고점 근접, 20일선 상대 위치, 20/60일선 기울기 조건을 미래 라벨에 추가합니다.
 
 ```bash
 python model_jp.py
 ```
 
-위 기본 실행은 실험 1 기준 파라미터와 같습니다(`seq-len=120`, `horizon-days=20`, `rise-threshold=0.08`, `max-drawdown=0.10`, `epochs=30`, `log-codes=True`).
+위 기본 실행은 JP 일봉 모델 기본 파라미터를 사용합니다(`start-date=2000-01-01`, `seq-len=120`, `horizon-days=20`, `rise-threshold=0.08`, `max-drawdown=0.10`, `epochs=30`, `trend-label-filter=False`, `eval-threshold=0.45`, `threshold-sweep-start=0.35`, `threshold-sweep-end=0.70`).
 
 모델 출력 파일 기본값은 현재 작업 폴더의 `model_jp.pt`입니다.
 실험 1 문서와 동일한 파일명(`model_jp_trend_v1.pt`)이 필요하면 `--model-out model_jp_trend_v1.pt`를 명시하세요.

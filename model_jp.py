@@ -721,7 +721,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     # 데이터 범위
     parser.add_argument("--table", default="STOCK_DATA_JP", help="DB 테이블 이름")
-    parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
+    parser.add_argument("--start-date", default="2000-01-01", help="데이터 시작일 (YYYY-MM-DD)")
     parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
     # 윈도우/라벨 정의
     parser.add_argument("--seq-len", type=int, default=120, help="시퀀스 길이(일)")
@@ -761,10 +761,10 @@ def parse_args() -> argparse.Namespace:
     # 진행 로그 및 평가
     parser.add_argument("--log-codes", action=argparse.BooleanOptionalAction, default=False, help="코드별 로딩 로그 출력")
     parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
-    parser.add_argument("--eval-threshold", type=float, default=0.3, help="평가용 확률 임계값")
+    parser.add_argument("--eval-threshold", type=float, default=0.45, help="평가용 확률 임계값")
     parser.add_argument("--auto-threshold", action=argparse.BooleanOptionalAction, default=True, help="auto-select best validation threshold by F1 sweep")
-    parser.add_argument("--threshold-sweep-start", type=float, default=0.10, help="threshold sweep start")
-    parser.add_argument("--threshold-sweep-end", type=float, default=0.90, help="threshold sweep end")
+    parser.add_argument("--threshold-sweep-start", type=float, default=0.35, help="threshold sweep start")
+    parser.add_argument("--threshold-sweep-end", type=float, default=0.70, help="threshold sweep end")
     parser.add_argument("--threshold-sweep-step", type=float, default=0.05, help="threshold sweep step")
     parser.add_argument("--pos-rate", type=float, default=0.10,
                         help="actual positive rate; if set, recompute pos_weight and init output bias")

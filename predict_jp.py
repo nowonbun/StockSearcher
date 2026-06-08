@@ -162,7 +162,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-ma60-slope", type=float, default=-0.01, help="ma60_slope_10 최소값 (model_jp.py trend label 기본값과 일치)")
     parser.add_argument("--min-ma120-slope", type=float, default=None, help="ma120_slope_20 최소값 (선택 보조 필터)")
     parser.add_argument("--min-prob", type=float, default=None)
-    parser.add_argument("--decision-threshold", type=float, default=None)
+    parser.add_argument("--decision-threshold", type=float, default=0.45)
     parser.add_argument("--log-every", type=int, default=200)
     parser.add_argument("--save-db", action="store_true")
     parser.add_argument("--run-name", default=None)
