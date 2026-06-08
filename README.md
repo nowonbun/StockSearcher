@@ -17,10 +17,14 @@ StockSearcher/
 ├── run.py               # 엔트리포인트 스크립트
 ├── dataset_jp.py        # 일본 주식 데이터 수집 파이프라인
 ├── dataset_kr.py        # 한국 주식 데이터 수집 파이프라인
-├── model_jp.py          # 일본 모델 학습 스크립트
-├── model_kr.py          # 한국 모델 학습 스크립트
-├── predict_jp.py        # 일본 상위 확률 추론 스크립트
-├── predict_kr.py        # 한국 상위 확률 추론 스크립트
+├── model_jp.py          # 일본 일봉 모델 학습 스크립트
+├── model_kr.py          # 한국 일봉 모델 학습 스크립트
+├── model_week_jp.py     # 일본 주봉 모델 학습 스크립트
+├── model_week_kr.py     # 한국 주봉 모델 학습 스크립트
+├── predict_jp.py        # 일본 일봉 상위 확률 추론 스크립트
+├── predict_kr.py        # 한국 일봉 상위 확률 추론 스크립트
+├── predict_week_jp.py   # 일본 주봉 상위 확률 추론 스크립트
+├── predict_week_kr.py   # 한국 주봉 상위 확률 추론 스크립트
 ├── function/            # 공통 유틸리티 모듈
 ├── entity/              # 데이터 모델 정의
 ├── backup/              # 이전 버전 및 참고용 스크립트
@@ -289,14 +293,16 @@ docker compose exec stocksearcher python predict_kr.py --model /models/model_kr.
 
 ## 모델 학습 (JP)
 
-JP 모델은 향후 N 거래일 내 **상승 추세가 유지된 채 목표 수익률을 달성할 확률**을 예측합니다.
-기본 타깃: "20일 내 +8% 이상 상승", 기간 내 최대 낙폭 10% 이내, 52주 고점 근접·20/60/120일선 정배열 유지.
+JP 일봉 모델은 향후 N 거래일 내 **목표 수익률을 달성하고 기간 내 최대 낙폭 조건을 지킬 확률**을 예측합니다.
+기본 타깃: "20일 내 +8% 이상 상승", 기간 내 최대 낙폭 10% 이내입니다.
+기본 실행은 2000-01-01부터 데이터를 사용합니다.
+`--trend-label-filter`를 켜면 52주 고점 근접, 20일선 상대 위치, 20/60일선 기울기 조건을 미래 라벨에 추가합니다.
 
 ```bash
 python model_jp.py
 ```
 
-위 기본 실행은 실험 1 기준 파라미터와 같습니다(`seq-len=120`, `horizon-days=20`, `rise-threshold=0.08`, `max-drawdown=0.10`, `epochs=30`, `log-codes=True`).
+위 기본 실행은 JP 일봉 모델 기본 파라미터를 사용합니다(`start-date=2000-01-01`, `seq-len=120`, `horizon-days=20`, `rise-threshold=0.08`, `max-drawdown=0.10`, `epochs=30`, `trend-label-filter=False`, `eval-threshold=0.45`, `threshold-sweep-start=0.35`, `threshold-sweep-end=0.70`).
 
 모델 출력 파일 기본값은 현재 작업 폴더의 `model_jp.pt`입니다.
 실험 1 문서와 동일한 파일명(`model_jp_trend_v1.pt`)이 필요하면 `--model-out model_jp_trend_v1.pt`를 명시하세요.
@@ -327,8 +333,9 @@ python model_jp.py --resume d:\stock\shared_models\model_jp.pt --epochs 10 --mod
 
 ## 모델 학습 (KR)
 
-KR 모델도 추세 유지형 라벨을 사용합니다.
-기본 타깃: "20일 내 +12% 이상 상승", 기간 내 최대 낙폭 10% 이내, 52주 고점 근접·20/60/120일선 정배열 유지.
+KR 일봉 모델도 향후 N 거래일 내 목표 수익률과 최대 낙폭 조건을 기준으로 라벨을 만듭니다.
+기본 타깃: "20일 내 +12% 이상 상승", 기간 내 최대 낙폭 10% 이내입니다.
+`--trend-label-filter`를 켜면 52주 고점 근접, 20일선 상대 위치, 20/60일선 기울기 조건을 미래 라벨에 추가합니다.
 
 ```bash
 python model_kr.py --seq-len 120 --horizon-days 20 --rise-threshold 0.12 --max-drawdown 0.10 --epochs 30 --log-codes
@@ -351,14 +358,66 @@ python model_kr.py --clip-grad-norm 1.0
 python model_kr.py --resume d:\stock\shared_models\model_kr.pt --epochs 10 --model-out d:\stock\shared_models\model_kr_resume.pt
 ```
 
+## 모델 입력 피처 요약
+
+입력 차원 변경 후 기존 `.pt` 파일은 새 입력 피처 수와 맞지 않을 수 있으므로 일봉/주봉 모델을 다시 학습해야 합니다.
+
+### 일봉 모델 (`model_jp.py`, `model_kr.py`)
+
+상대/파생 피처 10개를 사용합니다.
+
+- `ret_1d`: 전일 대비 종가 수익률
+- `close_vs_ma5`: 종가가 5일 이동평균 대비 얼마나 위/아래인지
+- `close_vs_ma20`: 종가가 20일 이동평균 대비 얼마나 위/아래인지
+- `close_vs_ma60`: 종가가 60일 이동평균 대비 얼마나 위/아래인지
+- `close_vs_ma240`: 종가가 240일 이동평균 대비 얼마나 위/아래인지
+- `hl_ratio`: 하루 고가-저가 변동폭을 종가로 나눈 값
+- `high_52w_ratio`: 종가가 최근 252거래일 최고가 대비 어느 위치인지
+- `ma20_slope_5`: 20일 이동평균의 최근 5일 기울기
+- `ma60_slope_10`: 60일 이동평균의 최근 10일 기울기
+- `ma120_slope_20`: 120일 이동평균의 최근 20일 기울기
+
+### 주봉 모델 (`model_week_jp.py`, `model_week_kr.py`)
+
+주봉 테이블에 있는 이동평균 기준에 맞춰 상대/파생 피처 8개를 사용합니다.
+
+- `ret_1d`
+- `close_vs_ma5`
+- `close_vs_ma20`
+- `close_vs_ma60`
+- `hl_ratio`
+- `high_52w_ratio`
+- `ma20_slope_5`
+- `ma60_slope_10`
+
+### 제외한 피처와 옵션
+
+노이즈를 줄이기 위해 다음 파생 피처 또는 필터성 값은 모델 입력/추세 필터에서 제외했습니다.
+
+- `bb_pos`, `di_diff`, `adx`, `rsi`, `macd_norm`, `macd_sig_norm`
+- `vol_vs_ma5`, `vol_vs_ma20`, `vol_vs_ma60`
+- `low_52w_ratio`, `ma_alignment`
+
+원본 입력 컬럼 중 `LowerBand60_3`, `DI_plus`, `DI_minus`, `ADX`도 모델 입력에서 제외했습니다.
+제거된 CLI 옵션은 사용하지 마세요: `--require-uptrend`, `--trend-label-require-ma-alignment`, 주봉의 `--band-label-min-bb-pos`, `--band-label-max-bb-pos`, `--min-bb-pos`, `--max-bb-pos`.
+
+## 주봉 모델 학습
+
+```bash
+python model_week_jp.py --model-out d:\stock\StockSearcher\models\model_week_jp.pt
+python model_week_kr.py --model-out d:\stock\StockSearcher\models\model_week_kr.pt
+```
+
+주봉도 기본 라벨은 목표 수익률과 최대 낙폭 조건만 사용합니다. 미래 추세 조건을 라벨에 추가하려면 `--trend-label-filter`를 명시하세요.
+
 ## 추론 (JP)
 
 특정 날짜 기준으로 상위 확률 종목을 출력합니다. `--as-of`가 2025-01-20이면 2025-01-20까지의 데이터로 추론합니다.
-기본적으로 정배열 추세 필터가 활성화됩니다.
+추세 필터는 옵션을 명시한 경우에만 적용됩니다.
 
 ```bash
 python predict_jp.py --model model_jp.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 \
-  --require-uptrend --min-high-52w-ratio 0.85 --min-close-vs-ma60 0.0
+  --min-high-52w-ratio 0.85 --min-close-vs-ma60 0.0
 ```
 
 특정 종목만 확인하려면 `--code`를 사용하세요.
@@ -377,7 +436,16 @@ python predict_jp.py --model model_jp.pt --seq-len 120 --as-of 2025-01-20 --top-
 
 ```bash
 python predict_kr.py --model model_kr.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 \
-  --require-uptrend --min-high-52w-ratio 0.85 --min-close-vs-ma60 0.0
+  --min-high-52w-ratio 0.85 --min-close-vs-ma60 0.0
+```
+
+## 주봉 추론
+
+```bash
+python predict_week_jp.py --model model_week_jp.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 \
+  --min-high-52w-ratio 0.85
+python predict_week_kr.py --model model_week_kr.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 \
+  --min-high-52w-ratio 0.85
 ```
 
 ## 간단 백테스트 (예측 → 20/40일 성과 권장)

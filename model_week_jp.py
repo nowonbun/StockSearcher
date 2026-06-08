@@ -76,10 +76,6 @@ _RAW_COLS = [
     "60MvAvg",
     "UpperBand60_1",
     "LowerBand60_1",
-    "LowerBand60_3",
-    "DI_plus",
-    "DI_minus",
-    "ADX",
 ]
 
 CLOSE_INDEX = _RAW_COLS.index("Close")
@@ -87,24 +83,14 @@ TRANS_AMNT_INDEX = _RAW_COLS.index("TransAmnt")
 VOLUME_INDEX = _RAW_COLS.index("Volume")
 
 RELATIVE_FEATURE_COLS = [
-    "ret_1d",
-    "close_vs_ma5",
-    "close_vs_ma20",
-    "close_vs_ma60",
-    "bb_pos",
-    "hl_ratio",
-    "di_diff",
-    "adx",
-    "rsi",
-    "macd_norm",
-    "macd_sig_norm",
-    "vol_vs_ma5",
-    "vol_vs_ma20",
-    "vol_vs_ma60",
-    "high_52w_ratio",
-    "low_52w_ratio",
-    "ma20_slope_5",
-    "ma60_slope_10",
+    "ret_1d",         # 전주 대비 종가 수익률: (이번 주 종가 / 전주 종가) - 1
+    "close_vs_ma5",   # 종가의 5주 이동평균 대비 위치: (종가 / 5주선) - 1
+    "close_vs_ma20",  # 종가의 20주 이동평균 대비 위치: (종가 / 20주선) - 1
+    "close_vs_ma60",  # 종가의 60주 이동평균 대비 위치: (종가 / 60주선) - 1
+    "hl_ratio",       # 주간 변동폭 비율: (고가 - 저가) / 종가
+    "high_52w_ratio", # 최근 252개 주봉 최고가 대비 종가 위치: 종가 / 252주 최고가
+    "ma20_slope_5",   # 20주 이동평균의 최근 5개 주봉 변화율
+    "ma60_slope_10",  # 60주 이동평균의 최근 10개 주봉 변화율
 ]
 
 
@@ -172,12 +158,13 @@ def _pct_change_over(arr: np.ndarray, periods: int, clip: tuple[float, float]) -
 
 
 def compute_relative_features(raw: np.ndarray) -> np.ndarray:
-    """raw: (T, len(_RAW_COLS)) -> (T, len(RELATIVE_FEATURE_COLS)) scale-invariant relative features."""
+    """
+    raw: (T, len(_RAW_COLS)) -> (T, len(RELATIVE_FEATURE_COLS)).
+    종목별 가격 단위 차이를 줄이기 위해 종가 위치, 이동평균 기울기,
+    변동폭 등 상대값 중심의 주봉 입력 피처를 만든다.
+    """
     T = len(raw)
     closes = raw[:, CLOSE_INDEX].astype(np.float64)
-
-    rsi = compute_rsi(closes.astype(np.float32))
-    macd_line, signal_line = compute_macd(closes.astype(np.float32))
 
     idx = {c: i for i, c in enumerate(_RAW_COLS)}
 
@@ -195,38 +182,12 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
     close_vs_ma20 = vs_ma("20MvAvg")
     close_vs_ma60 = vs_ma("60MvAvg")
 
-    upper = raw[:, idx["UpperBand60_1"]].astype(np.float64)
-    lower = raw[:, idx["LowerBand60_1"]].astype(np.float64)
-    band_width = upper - lower
-    bb_pos = np.clip(
-        (closes - lower) / (band_width + 1e-10),
-        -1.0, 2.0,
-    ).astype(np.float32)
-
     highs = raw[:, idx["High"]].astype(np.float64)
     lows = raw[:, idx["Low"]].astype(np.float64)
     hl_ratio = np.clip((highs - lows) / (closes + 1e-10), 0.0, 0.3).astype(np.float32)
 
-    di_plus = raw[:, idx["DI_plus"]].astype(np.float64)
-    di_minus = raw[:, idx["DI_minus"]].astype(np.float64)
-    di_diff = ((di_plus - di_minus) / 100.0).astype(np.float32)
-
-    adx = (raw[:, idx["ADX"]].astype(np.float32) / 100.0)
-
-    rsi_norm = (rsi / 100.0).astype(np.float32)
-
-    macd_norm = np.clip(macd_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
-    macd_sig_norm = np.clip(signal_line / (np.abs(closes).astype(np.float32) + 1e-10), -0.1, 0.1)
-
-    volumes = raw[:, idx["Volume"]].astype(np.float64)
-    vol_vs_ma5 = _vol_vs_ma(volumes, 5)
-    vol_vs_ma20 = _vol_vs_ma(volumes, 20)
-    vol_vs_ma60 = _vol_vs_ma(volumes, 60)
-
     high_52w = pd.Series(highs).rolling(252, min_periods=1).max().values
-    low_52w = pd.Series(lows).rolling(252, min_periods=1).min().values
     high_52w_ratio = np.clip(closes / (high_52w + 1e-10), 0.0, 1.0).astype(np.float32)
-    low_52w_ratio = np.clip(closes / (low_52w + 1e-10) - 1.0, 0.0, 2.0).astype(np.float32)
 
     ma20 = raw[:, idx["20MvAvg"]].astype(np.float64)
     ma60 = raw[:, idx["60MvAvg"]].astype(np.float64)
@@ -239,18 +200,8 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
             close_vs_ma5,
             close_vs_ma20,
             close_vs_ma60,
-            bb_pos,
             hl_ratio,
-            di_diff,
-            adx,
-            rsi_norm,
-            macd_norm,
-            macd_sig_norm,
-            vol_vs_ma5,
-            vol_vs_ma20,
-            vol_vs_ma60,
             high_52w_ratio,
-            low_52w_ratio,
             ma20_slope_5,
             ma60_slope_10,
         ],
@@ -267,7 +218,6 @@ def extract_trend_filter_metrics(features: np.ndarray) -> dict[str, float]:
         "high_52w_ratio": float(latest[RELATIVE_FEATURE_COLS.index("high_52w_ratio")]),
         "ma20_slope_5": float(latest[RELATIVE_FEATURE_COLS.index("ma20_slope_5")]),
         "ma60_slope_10": float(latest[RELATIVE_FEATURE_COLS.index("ma60_slope_10")]),
-        "bb_pos": float(latest[RELATIVE_FEATURE_COLS.index("bb_pos")]),
     }
 
 
@@ -425,9 +375,7 @@ class WindowIterableDataset(IterableDataset):
         trend_label_min_close_vs_ma20: float = -0.02,
         trend_label_min_ma20_slope: float = -0.01,
         trend_label_min_ma60_slope: float = -0.01,
-        trend_label_require_ma_alignment: bool = True,
-        band_label_min_bb_pos: float = 0.80,
-        band_label_max_bb_pos: float = 1.15,
+        trend_label_filter: bool = False,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -448,11 +396,7 @@ class WindowIterableDataset(IterableDataset):
         self.trend_label_min_close_vs_ma20 = trend_label_min_close_vs_ma20
         self.trend_label_min_ma20_slope = trend_label_min_ma20_slope
         self.trend_label_min_ma60_slope = trend_label_min_ma60_slope
-        self.trend_label_require_ma_alignment = trend_label_require_ma_alignment
-        self.band_label_min_bb_pos = band_label_min_bb_pos
-        self.band_label_max_bb_pos = band_label_max_bb_pos
-        if self.band_label_min_bb_pos > self.band_label_max_bb_pos:
-            raise ValueError("band_label_min_bb_pos cannot exceed band_label_max_bb_pos")
+        self.trend_label_filter = trend_label_filter
         if self.liquidity_days > self.seq_len:
             raise ValueError("liquidity_days cannot exceed seq_len")
 
@@ -510,15 +454,22 @@ class WindowIterableDataset(IterableDataset):
                         if window_closes.size == 0:
                             continue
                         future_close = float(closes[future_idx])
-                        current_bb_pos = float(features[end_idx, RELATIVE_FEATURE_COLS.index("bb_pos")])
-                        if not (self.band_label_min_bb_pos <= current_bb_pos <= self.band_label_max_bb_pos):
-                            continue
                         max_pullback = float(window_closes.min() / (base + 1e-10) - 1.0)
-                        is_upper_band_continuation = (
-                            future_close >= target
-                            and max_pullback >= -self.max_drawdown
-                        )
-                        label = 1.0 if is_upper_band_continuation else 0.0
+                        base_label = future_close >= target and max_pullback >= -self.max_drawdown
+                        if self.trend_label_filter:
+                            future_high_52w_ratio = float(features[future_idx, RELATIVE_FEATURE_COLS.index("high_52w_ratio")])
+                            future_close_vs_ma20 = float(features[future_idx, RELATIVE_FEATURE_COLS.index("close_vs_ma20")])
+                            future_ma20_slope = float(features[future_idx, RELATIVE_FEATURE_COLS.index("ma20_slope_5")])
+                            future_ma60_slope = float(features[future_idx, RELATIVE_FEATURE_COLS.index("ma60_slope_10")])
+                            trend_filter_ok = (
+                                future_high_52w_ratio >= self.trend_label_min_high_52w_ratio
+                                and future_close_vs_ma20 >= self.trend_label_min_close_vs_ma20
+                                and future_ma20_slope >= self.trend_label_min_ma20_slope
+                                and future_ma60_slope >= self.trend_label_min_ma60_slope
+                            )
+                        else:
+                            trend_filter_ok = True
+                        label = 1.0 if base_label and trend_filter_ok else 0.0
 
                         x = features[i : i + self.seq_len].copy()  # (seq_len, len(RELATIVE_FEATURE_COLS))
                         yield torch.from_numpy(x), torch.tensor(label, dtype=torch.float32)
@@ -759,11 +710,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     # 데이터 범위
     parser.add_argument("--table", default="STOCK_DATA_WEEK_JP", help="DB table name")
-    parser.add_argument("--start-date", default=static.start_date, help="데이터 시작일 (YYYY-MM-DD)")
+    parser.add_argument("--start-date", default="2000-01-01", help="데이터 시작일 (YYYY-MM-DD)")
     parser.add_argument("--end-date", default=static.end_date, help="데이터 종료일 (YYYY-MM-DD)")
     # 윈도우/라벨 정의
     parser.add_argument("--seq-len", type=int, default=120, help="시퀀스 길이(일)")
-    parser.add_argument("--horizon-days", type=int, default=8, help="label horizon in weekly rows")
+    parser.add_argument("--horizon-days", type=int, default=20, help="label horizon in weekly rows")
     parser.add_argument("--rise-threshold", type=float, default=0.08, help="목표 상승률 (예: 0.10 = +10%%)")
     parser.add_argument("--max-drawdown", type=float, default=0.10, help="기간 내 허용 최대 낙폭")
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000, help="유동성 기간 내 TransAmnt 합 최소값")
@@ -772,9 +723,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trend-label-min-close-vs-ma20", type=float, default=-0.02, help="추세 라벨에서 허용하는 미래 close_vs_ma20 최저값")
     parser.add_argument("--trend-label-min-ma20-slope", type=float, default=-0.01, help="추세 라벨에서 허용하는 미래 MA20 기울기 최저값")
     parser.add_argument("--trend-label-min-ma60-slope", type=float, default=-0.01, help="추세 라벨에서 허용하는 미래 MA60 기울기 최저값")
-    parser.add_argument("--trend-label-require-ma-alignment", action=argparse.BooleanOptionalAction, default=True, help="추세 라벨에서 미래 정배열을 요구할지 여부")
-    parser.add_argument("--band-label-min-bb-pos", type=float, default=0.80, help="minimum bb_pos for upper-band candidate")
-    parser.add_argument("--band-label-max-bb-pos", type=float, default=1.15, help="maximum bb_pos for upper-band candidate")
+    parser.add_argument("--trend-label-filter", action=argparse.BooleanOptionalAction, default=False, help="미래 추세 조건으로 양성 라벨을 추가 선별할지 여부")
     # 학습/검증 분리
     parser.add_argument("--val-ratio", type=float, default=0.2, help="날짜 기준 검증 비율")
     # 학습 루프
@@ -802,10 +751,10 @@ def parse_args() -> argparse.Namespace:
     # 진행 로그 및 평가
     parser.add_argument("--log-codes", action=argparse.BooleanOptionalAction, default=False, help="코드별 로딩 로그 출력")
     parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
-    parser.add_argument("--eval-threshold", type=float, default=0.3, help="평가용 확률 임계값")
+    parser.add_argument("--eval-threshold", type=float, default=0.45, help="평가용 확률 임계값")
     parser.add_argument("--auto-threshold", action=argparse.BooleanOptionalAction, default=True, help="auto-select best validation threshold by F1 sweep")
-    parser.add_argument("--threshold-sweep-start", type=float, default=0.10, help="threshold sweep start")
-    parser.add_argument("--threshold-sweep-end", type=float, default=0.90, help="threshold sweep end")
+    parser.add_argument("--threshold-sweep-start", type=float, default=0.35, help="threshold sweep start")
+    parser.add_argument("--threshold-sweep-end", type=float, default=0.70, help="threshold sweep end")
     parser.add_argument("--threshold-sweep-step", type=float, default=0.05, help="threshold sweep step")
     parser.add_argument("--pos-rate", type=float, default=0.10,
                         help="actual positive rate; if set, recompute pos_weight and init output bias")
@@ -882,9 +831,7 @@ def main() -> None:
         args.trend_label_min_close_vs_ma20,
         args.trend_label_min_ma20_slope,
         args.trend_label_min_ma60_slope,
-        args.trend_label_require_ma_alignment,
-        args.band_label_min_bb_pos,
-        args.band_label_max_bb_pos,
+        args.trend_label_filter,
     )
     val_ds = WindowIterableDataset(
         args.table,
@@ -905,9 +852,7 @@ def main() -> None:
         args.trend_label_min_close_vs_ma20,
         args.trend_label_min_ma20_slope,
         args.trend_label_min_ma60_slope,
-        args.trend_label_require_ma_alignment,
-        args.band_label_min_bb_pos,
-        args.band_label_max_bb_pos,
+        args.trend_label_filter,
     )
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
