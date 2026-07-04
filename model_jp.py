@@ -97,6 +97,20 @@ RELATIVE_FEATURE_COLS = [
     "ma120_slope_20",  # 120일 이동평균의 최근 20거래일 변화율
 ]
 
+HA_RELATIVE_FEATURE_COLS_MINIMAL = [
+    "ha_ret_1d",
+    "ha_close_vs_ma20",
+    "ha_body_ratio",
+]
+
+
+def get_feature_cols(ha_feature_mode: str = "none") -> list[str]:
+    if ha_feature_mode == "none":
+        return list(RELATIVE_FEATURE_COLS)
+    if ha_feature_mode == "minimal":
+        return list(RELATIVE_FEATURE_COLS) + list(HA_RELATIVE_FEATURE_COLS_MINIMAL)
+    raise ValueError(f"unsupported ha_feature_mode: {ha_feature_mode}")
+
 
 # ── 파생 피처 계산 ──────────────────────────────────────────────────────────────
 
@@ -161,11 +175,47 @@ def _pct_change_over(arr: np.ndarray, periods: int, clip: tuple[float, float]) -
     return out
 
 
-def compute_relative_features(raw: np.ndarray) -> np.ndarray:
+def _build_ha_series(raw: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    idx = {c: i for i, c in enumerate(_RAW_COLS)}
+    opens = raw[:, idx["Open"]].astype(np.float64)
+    highs = raw[:, idx["High"]].astype(np.float64)
+    lows = raw[:, idx["Low"]].astype(np.float64)
+    closes = raw[:, idx["Close"]].astype(np.float64)
+
+    ha_close = (opens + highs + lows + closes) / 4.0
+    ha_open = np.empty(len(raw), dtype=np.float64)
+    ha_high = np.empty(len(raw), dtype=np.float64)
+    ha_low = np.empty(len(raw), dtype=np.float64)
+
+    if len(raw) == 0:
+        return (
+            ha_close.astype(np.float32),
+            ha_open.astype(np.float32),
+            ha_high.astype(np.float32),
+            ha_low.astype(np.float32),
+        )
+
+    ha_open[0] = (opens[0] + closes[0]) / 2.0
+    ha_high[0] = max(highs[0], ha_open[0], ha_close[0])
+    ha_low[0] = min(lows[0], ha_open[0], ha_close[0])
+    for i in range(1, len(raw)):
+        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
+        ha_high[i] = max(highs[i], ha_open[i], ha_close[i])
+        ha_low[i] = min(lows[i], ha_open[i], ha_close[i])
+
+    return (
+        ha_close.astype(np.float32),
+        ha_open.astype(np.float32),
+        ha_high.astype(np.float32),
+        ha_low.astype(np.float32),
+    )
+
+
+def compute_relative_features(raw: np.ndarray, ha_feature_mode: str = "none") -> np.ndarray:
     """
-    raw: (T, len(_RAW_COLS)) -> (T, len(RELATIVE_FEATURE_COLS)).
-    종목별 가격 단위 차이를 줄이기 위해 종가 위치, 이동평균 기울기,
-    변동폭 등 상대값 중심의 입력 피처를 만든다.
+    raw: (T, len(_RAW_COLS)) -> (T, len(get_feature_cols(ha_feature_mode))).
+    醫낅ぉ蹂?媛寃??⑥쐞 李⑥씠瑜?以꾩씠湲??꾪빐 醫낃? ?꾩튂, ?대룞?됯퇏 湲곗슱湲?
+    蹂?숉룺 ???곷?媛?以묒떖???낅젰 ?쇱쿂瑜?留뚮뱺??
     """
     T = len(raw)
     closes = raw[:, CLOSE_INDEX].astype(np.float64)
@@ -216,22 +266,64 @@ def compute_relative_features(raw: np.ndarray) -> np.ndarray:
         ],
         axis=1,
     )
+    if ha_feature_mode == "minimal":
+        ha_close, ha_open, _, _ = _build_ha_series(raw)
+        ha_ret_1d = np.zeros(T, dtype=np.float32)
+        ha_ret_1d[1:] = np.clip(
+            (ha_close[1:] - ha_close[:-1]) / (np.abs(ha_close[:-1]) + 1e-10),
+            -0.3, 0.3,
+        ).astype(np.float32)
+        ha_close_vs_ma20 = np.clip((ha_close / (ma20 + 1e-10)) - 1.0, -0.5, 0.5).astype(np.float32)
+        ha_body_ratio = np.clip(np.abs(ha_close - ha_open) / (closes + 1e-10), 0.0, 0.3).astype(np.float32)
+        out = np.concatenate(
+            [
+                out,
+                np.stack([ha_ret_1d, ha_close_vs_ma20, ha_body_ratio], axis=1),
+            ],
+            axis=1,
+        )
+    elif ha_feature_mode != "none":
+        raise ValueError(f"unsupported ha_feature_mode: {ha_feature_mode}")
     return out.astype(np.float32)
 
 
-def extract_trend_filter_metrics(features: np.ndarray) -> dict[str, float]:
+def extract_trend_filter_metrics(
+    features: np.ndarray,
+    feature_cols: list[str] | None = None,
+) -> dict[str, float]:
+    cols = feature_cols or RELATIVE_FEATURE_COLS
     latest = features[-1]
     return {
-        "close_vs_ma20": float(latest[RELATIVE_FEATURE_COLS.index("close_vs_ma20")]),
-        "close_vs_ma60": float(latest[RELATIVE_FEATURE_COLS.index("close_vs_ma60")]),
-        "high_52w_ratio": float(latest[RELATIVE_FEATURE_COLS.index("high_52w_ratio")]),
-        "ma20_slope_5": float(latest[RELATIVE_FEATURE_COLS.index("ma20_slope_5")]),
-        "ma60_slope_10": float(latest[RELATIVE_FEATURE_COLS.index("ma60_slope_10")]),
-        "ma120_slope_20": float(latest[RELATIVE_FEATURE_COLS.index("ma120_slope_20")]),
+        "close_vs_ma20": float(latest[cols.index("close_vs_ma20")]),
+        "close_vs_ma60": float(latest[cols.index("close_vs_ma60")]),
+        "high_52w_ratio": float(latest[cols.index("high_52w_ratio")]),
+        "ma20_slope_5": float(latest[cols.index("ma20_slope_5")]),
+        "ma60_slope_10": float(latest[cols.index("ma60_slope_10")]),
+        "ma120_slope_20": float(latest[cols.index("ma120_slope_20")]),
     }
 
 
-# ── Focal Loss ─────────────────────────────────────────────────────────────────
+def load_model_checkpoint(
+    model_path: str,
+    expected_ha_feature_mode: str,
+    map_location: torch.device | str = "cpu",
+) -> dict[str, torch.Tensor]:
+    checkpoint = torch.load(model_path, map_location=map_location, weights_only=False)
+    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        saved_mode = checkpoint.get("ha_feature_mode", "none")
+        if saved_mode != expected_ha_feature_mode:
+            raise ValueError(
+                f"checkpoint ha_feature_mode mismatch: expected={expected_ha_feature_mode} saved={saved_mode}"
+            )
+        state_dict = checkpoint["state_dict"]
+    else:
+        if expected_ha_feature_mode != "none":
+            raise ValueError(
+                "legacy checkpoint without ha_feature_mode metadata can only be loaded with --ha-feature-mode none"
+            )
+        state_dict = checkpoint
+    return state_dict
+
 
 class FocalLoss(nn.Module):
     def __init__(
@@ -386,6 +478,7 @@ class WindowIterableDataset(IterableDataset):
         trend_label_min_ma20_slope: float = -0.01,
         trend_label_min_ma60_slope: float = -0.01,
         trend_label_filter: bool = False,
+        ha_feature_mode: str = "none",
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -407,6 +500,8 @@ class WindowIterableDataset(IterableDataset):
         self.trend_label_min_ma20_slope = trend_label_min_ma20_slope
         self.trend_label_min_ma60_slope = trend_label_min_ma60_slope
         self.trend_label_filter = trend_label_filter
+        self.ha_feature_mode = ha_feature_mode
+        self.feature_cols = get_feature_cols(ha_feature_mode)
         if self.liquidity_days > self.seq_len:
             raise ValueError("liquidity_days cannot exceed seq_len")
 
@@ -435,7 +530,7 @@ class WindowIterableDataset(IterableDataset):
                     raw = np.array([r[1:] for r in rows], dtype=np.float32)
                     closes = raw[:, CLOSE_INDEX]
 
-                    features = compute_relative_features(raw)
+                    features = compute_relative_features(raw, self.ha_feature_mode)
 
                     max_start = len(features) - (self.seq_len + self.horizon_days) + 1
                     if max_start <= 0:
@@ -467,10 +562,10 @@ class WindowIterableDataset(IterableDataset):
                         max_pullback = float(window_closes.min() / (base + 1e-10) - 1.0)
                         base_label = future_close >= target and max_pullback >= -self.max_drawdown
                         if self.trend_label_filter:
-                            future_high_52w_ratio = float(features[future_idx, RELATIVE_FEATURE_COLS.index("high_52w_ratio")])
-                            future_close_vs_ma20 = float(features[future_idx, RELATIVE_FEATURE_COLS.index("close_vs_ma20")])
-                            future_ma20_slope = float(features[future_idx, RELATIVE_FEATURE_COLS.index("ma20_slope_5")])
-                            future_ma60_slope = float(features[future_idx, RELATIVE_FEATURE_COLS.index("ma60_slope_10")])
+                            future_high_52w_ratio = float(features[future_idx, self.feature_cols.index("high_52w_ratio")])
+                            future_close_vs_ma20 = float(features[future_idx, self.feature_cols.index("close_vs_ma20")])
+                            future_ma20_slope = float(features[future_idx, self.feature_cols.index("ma20_slope_5")])
+                            future_ma60_slope = float(features[future_idx, self.feature_cols.index("ma60_slope_10")])
                             trend_filter_ok = (
                                 future_high_52w_ratio >= self.trend_label_min_high_52w_ratio
                                 and future_close_vs_ma20 >= self.trend_label_min_close_vs_ma20
@@ -511,6 +606,7 @@ def train_loop(
     threshold_sweep_end: float,
     threshold_sweep_step: float,
     pos_weight_max: float | None,
+    ha_feature_mode: str,
 ) -> None:
     def compute_metrics_from_probs(
         probs: np.ndarray,
@@ -685,7 +781,7 @@ def train_loop(
 
         if f1 > best_f1:
             best_f1 = f1
-            torch.save(model.state_dict(), model_out)
+            torch.save({"state_dict": model.state_dict(), "ha_feature_mode": ha_feature_mode}, model_out)
             print(f'  -> saved best model (epoch={epoch}, f1={f1:.4f}, best_f1={best_f1:.4f})')
         else:
             print(f'  -> not saved (epoch={epoch}, f1={f1:.4f}, best_f1={best_f1:.4f})')
@@ -748,6 +844,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-encoder-layers", type=int, default=3, help="Transformer Encoder 레이어 수")
     parser.add_argument("--dim-feedforward", type=int, default=512, help="Transformer FFN 내부 차원")
     parser.add_argument("--dropout", type=float, default=0.2, help="드롭아웃")
+    parser.add_argument("--ha-feature-mode", choices=["none", "minimal"], default="none", help="Heikin-Ashi feature mode")
     # 체크포인트 및 클래스 불균형
     parser.add_argument("--model-out", default="model_jp.pt", help="모델 저장 경로")
     parser.add_argument("--resume", default=None, help="재개 모델 경로")
@@ -842,6 +939,7 @@ def main() -> None:
         args.trend_label_min_ma20_slope,
         args.trend_label_min_ma60_slope,
         args.trend_label_filter,
+        args.ha_feature_mode,
     )
     val_ds = WindowIterableDataset(
         args.table,
@@ -863,6 +961,7 @@ def main() -> None:
         args.trend_label_min_ma20_slope,
         args.trend_label_min_ma60_slope,
         args.trend_label_filter,
+        args.ha_feature_mode,
     )
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
@@ -870,7 +969,7 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = StockTransformer(
-        input_size=len(RELATIVE_FEATURE_COLS),
+        input_size=len(get_feature_cols(args.ha_feature_mode)),
         d_model=args.d_model,
         nhead=args.nhead,
         num_encoder_layers=args.num_encoder_layers,
@@ -879,7 +978,7 @@ def main() -> None:
     ).to(device)
 
     if args.resume:
-        model.load_state_dict(torch.load(args.resume, map_location=device, weights_only=True))
+        model.load_state_dict(load_model_checkpoint(args.resume, args.ha_feature_mode, map_location=device))
     elif pos_rate_for_bias is not None:
         bias_init = math.log(pos_rate_for_bias / (1.0 - pos_rate_for_bias))
         with torch.no_grad():
@@ -907,6 +1006,7 @@ def main() -> None:
         args.threshold_sweep_end,
         args.threshold_sweep_step,
         args.pos_weight_max,
+        args.ha_feature_mode,
     )
 
 
