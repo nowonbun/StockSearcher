@@ -741,7 +741,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=256, help="batch size")
     parser.add_argument("--epochs", type=int, default=30, help="학습 에폭 수")
     parser.add_argument("--lr", type=float, default=1e-3, help="학습률")
-    parser.add_argument("--clip-grad-norm", type=float, default=1.0, help="gradient clipping max norm (0=비활성)")
+    parser.add_argument("--clip-grad-norm", type=float, default=0.5, help="gradient clipping max norm (0=비활성)")
     # 모델 구조 (Transformer)
     parser.add_argument("--d-model", type=int, default=256, help="Transformer d_model (임베딩 차원)")
     parser.add_argument("--nhead", type=int, default=8, help="Multi-head attention 헤드 수 (d_model의 약수여야 함)")
@@ -756,18 +756,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pos-weight-step", type=float, default=0.05, help="pos_weight 조정 비율 (예: 0.05 = 5%%)")
     parser.add_argument("--drop-patience", type=int, default=3, help="연속 하락 횟수로 조기 종료")
     # Focal Loss
-    parser.add_argument("--use-focal-loss", action=argparse.BooleanOptionalAction, default=False, help="BCEWithLogitsLoss 대신 Focal Loss 사용")
+    parser.add_argument("--use-focal-loss", action=argparse.BooleanOptionalAction, default=True, help="BCEWithLogitsLoss 대신 Focal Loss 사용")
     parser.add_argument("--focal-gamma", type=float, default=2.0, help="Focal Loss gamma 파라미터")
     parser.add_argument("--log-codes", action=argparse.BooleanOptionalAction, default=False, help="코드별 로딩 로그 출력")
     parser.add_argument("--log-every", type=int, default=50, help="코드 로그 출력 간격")
     parser.add_argument("--eval-threshold", type=float, default=0.45, help="평가용 확률 임계값")
     parser.add_argument("--auto-threshold", action=argparse.BooleanOptionalAction, default=True, help="auto-select best validation threshold by F1 sweep")
-    parser.add_argument("--threshold-sweep-start", type=float, default=0.35, help="threshold sweep start")
-    parser.add_argument("--threshold-sweep-end", type=float, default=0.70, help="threshold sweep end")
-    parser.add_argument("--threshold-sweep-step", type=float, default=0.05, help="threshold sweep step")
-    parser.add_argument("--pos-rate", type=float, default=0.10,
+    parser.add_argument("--threshold-sweep-start", type=float, default=0.70, help="threshold sweep start")
+    parser.add_argument("--threshold-sweep-end", type=float, default=0.95, help="threshold sweep end")
+    parser.add_argument("--threshold-sweep-step", type=float, default=0.01, help="threshold sweep step")
+    parser.add_argument("--pos-rate", type=float, default=0.06,
                         help="actual positive rate; if set, recompute pos_weight and init output bias")
-    parser.add_argument("--pos-weight-max", type=float, default=0, help="cap pos_weight (<=0 disables)")
+    parser.add_argument("--pos-weight-max", type=float, default=20, help="cap pos_weight (<=0 disables)")
     return parser.parse_args()
 
 
