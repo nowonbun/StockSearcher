@@ -1,4 +1,4 @@
-﻿# StockSearcher
+# StockSearcher
 
 주식 데이터 수집 자동화를 위한 파이썬 스크립트 모음입니다. 일본과 한국 시장의 일/주봉 데이터를 수집하고, 이동평균 및 볼린저 밴드와 같은 지표를 계산한 뒤 MySQL 데이터베이스에 적재합니다.
 
@@ -18,13 +18,21 @@ StockSearcher/
 ├── dataset_jp.py        # 일본 주식 데이터 수집 파이프라인
 ├── dataset_kr.py        # 한국 주식 데이터 수집 파이프라인
 ├── model_jp.py          # 일본 일봉 모델 학습 스크립트
+├── model_jp_v2.py       # 일본 일봉 반전형 v2 학습 스크립트
 ├── model_kr.py          # 한국 일봉 모델 학습 스크립트
+├── model_kr_v2.py       # 한국 일봉 반전형 v2 학습 스크립트
 ├── model_week_jp.py     # 일본 주봉 모델 학습 스크립트
+├── model_week_jp_v2.py  # 일본 주봉 반전형 v2 학습 스크립트
 ├── model_week_kr.py     # 한국 주봉 모델 학습 스크립트
+├── model_week_kr_v2.py  # 한국 주봉 반전형 v2 학습 스크립트
 ├── predict_jp.py        # 일본 일봉 상위 확률 추론 스크립트
+├── predict_jp_v2.py     # 일본 일봉 반전형 v2 추론 스크립트
 ├── predict_kr.py        # 한국 일봉 상위 확률 추론 스크립트
+├── predict_kr_v2.py     # 한국 일봉 반전형 v2 추론 스크립트
 ├── predict_week_jp.py   # 일본 주봉 상위 확률 추론 스크립트
+├── predict_week_jp_v2.py# 일본 주봉 반전형 v2 추론 스크립트
 ├── predict_week_kr.py   # 한국 주봉 상위 확률 추론 스크립트
+├── predict_week_kr_v2.py# 한국 주봉 반전형 v2 추론 스크립트
 ├── function/            # 공통 유틸리티 모듈
 ├── entity/              # 데이터 모델 정의
 ├── backup/              # 이전 버전 및 참고용 스크립트
@@ -358,6 +366,49 @@ python model_kr.py --clip-grad-norm 1.0
 python model_kr.py --resume d:\stock\shared_models\model_kr.pt --epochs 10 --model-out d:\stock\shared_models\model_kr_resume.pt
 ```
 
+## 반전형 v2 모델 학습
+
+v1(추세 지속형)과 달리 v2는 하락 구간 말미에서 상승 전환하는 패턴을 학습합니다.  
+체크포인트에 `ha_feature_mode: "v2_reversal_*"` 메타데이터가 포함되어 v1 모델과 교환 불가합니다.
+
+### 일봉 JP
+
+```bash
+python model_jp_v2.py
+# 기본값: seq-len=60, horizon-days=20, rise-threshold=0.05, max-drawdown=0.06
+#          weakness-score=3, ha-body-ratio=0.35, pos-rate=0.03
+```
+
+### 일봉 KR
+
+```bash
+python model_kr_v2.py
+```
+
+### 주봉 JP
+
+```bash
+python model_week_jp_v2.py
+# 기본값: seq-len=120, horizon-days=20(주봉), rise-threshold=0.09, max-drawdown=0.08
+#          weakness-score=3, ha-body-ratio=0.30, pos-rate=0.05
+```
+
+### 주봉 KR
+
+```bash
+python model_week_kr_v2.py
+```
+
+주요 조정 옵션:
+
+```bash
+# 약세 조건 완화 (라벨 희소성이 심하면)
+python model_jp_v2.py --reversal-min-weakness-score 2 --reversal-min-ha-body-ratio 0.20
+
+# pos-rate 실측 기반 재설정 (train_pos_rate 로그 확인 후)
+python model_jp_v2.py --pos-rate 0.01
+```
+
 ## 모델 입력 피처 요약
 
 입력 차원 변경 후 기존 `.pt` 파일은 새 입력 피처 수와 맞지 않을 수 있으므로 일봉/주봉 모델을 다시 학습해야 합니다.
@@ -389,6 +440,21 @@ python model_kr.py --resume d:\stock\shared_models\model_kr.pt --epochs 10 --mod
 - `high_52w_ratio`
 - `ma20_slope_5`
 - `ma60_slope_10`
+
+### 반전형 v2 모델 (`model_{jp,kr}_v2.py`, `model_week_{jp,kr}_v2.py`)
+
+하락권 → 상승 전환을 탐지하기 위한 피처 5개를 사용합니다.
+
+- `close_vs_lowerband60_1`: 종가가 볼린저 밴드(60일, σ=1) 하단 대비 얼마나 위/아래인지
+- `band_pos_60_1`: 종가가 밴드 하단~상단 구간 내 상대 위치 (0=하단, 1=상단)
+- `drawdown_20d`: 최근 20봉 최고가 대비 종가의 낙폭
+- `ha_ret_1d`: 전봉 대비 하이킨아시 종가 수익률
+- `ha_body_ratio`: 하이킨아시 몸통 크기 / 하이킨아시 전체 범위
+
+라벨 조건 (3가지 약세 조건 중 N개 이상 충족 + 하이킨아시 양전환 + 미래 상승 도달 + 최대 낙폭 제한):
+- `close_vs_lowerband60_1 ≤ max`, `band_pos_60_1 ≤ max`, `drawdown_20d ≤ max` 중 `reversal-min-weakness-score`개 이상
+- 직전 봉이 HA 음봉이고, 현재 봉이 HA 양봉이며, HA 몸통 비율 ≥ min
+- 향후 N봉 내 목표 수익률 도달 + 기간 내 최대 낙폭 제한
 
 ### 제외한 피처와 옵션
 
@@ -431,6 +497,35 @@ DB에 저장하려면 `--save-db`를 추가합니다.
 ```bash
 python predict_jp.py --model model_jp.pt --seq-len 120 --as-of 2025-01-20 --top-k 20 --save-db
 ```
+
+## 반전형 v2 추론
+
+### 일봉 JP / KR
+
+```bash
+python predict_jp_v2.py --model model_jp_v2.pt --as-of 2025-01-20
+# 기본값: top-k=50, min-prob=0.55, seq-len=60
+
+python predict_kr_v2.py --model model_kr_v2.pt --as-of 2025-01-20
+```
+
+### 주봉 JP / KR
+
+```bash
+python predict_week_jp_v2.py --model model_week_jp_v2.pt --as-of 2025-01-20
+# 기본값: top-k=30, min-prob=0.60, seq-len=120
+
+python predict_week_kr_v2.py --model model_week_kr_v2.pt --as-of 2025-01-20
+```
+
+단건 확인:
+
+```bash
+python predict_jp_v2.py --model model_jp_v2.pt --as-of 2025-01-20 --code 7203
+```
+
+> v2 모델 파일은 v1 `predict_jp.py`로 로드하면 `ha_feature_mode` 불일치 오류가 발생합니다.  
+> 반드시 `predict_jp_v2.py`와 쌍으로 사용하세요.
 
 ## 추론 (KR)
 
@@ -543,6 +638,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/compare_models_kr.ps
 ---
 
 ## 변경 이력
+
+### 2026-07-03
+
+#### 반전형 v2 모델/추론 스크립트 추가
+
+- `model_{jp,kr}_v2.py`, `model_week_{jp,kr}_v2.py`: 하락권 반전 탐지 전용 학습 스크립트
+- `predict_{jp,kr}_v2.py`, `predict_week_{jp,kr}_v2.py`: v2 모델 전용 추론 스크립트
+- v1과 피처 셋이 달라 체크포인트가 교환 불가 (`ha_feature_mode` 메타데이터로 구분)
+- 입력 피처 5개: `close_vs_lowerband60_1`, `band_pos_60_1`, `drawdown_20d`, `ha_ret_1d`, `ha_body_ratio`
 
 ### 2026-02-21
 

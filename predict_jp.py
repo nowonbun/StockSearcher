@@ -11,12 +11,13 @@ import torch
 import function.static as static
 import mysql.connector
 from model_jp import (
-    RELATIVE_FEATURE_COLS,
     _RAW_COLS,
     StockTransformer,
     compute_relative_features,
     extract_trend_filter_metrics,
+    get_feature_cols,
     load_codes,
+    load_model_checkpoint,
 )
 
 
@@ -30,6 +31,7 @@ def _fetch_sequence(
     code: str,
     seq_len: int,
     cutoff_date: str | None,
+    ha_feature_mode: str,
 ) -> tuple[np.ndarray, dict[str, float]] | None:
     not_null = _build_not_null_clause(_RAW_COLS)
     if cutoff_date:
@@ -53,8 +55,9 @@ def _fetch_sequence(
     if len(rows) < seq_len:
         return None
     raw = np.array(rows[::-1], dtype=np.float32)
-    features = compute_relative_features(raw)
-    return features, extract_trend_filter_metrics(features)
+    feature_cols = get_feature_cols(ha_feature_mode)
+    features = compute_relative_features(raw, ha_feature_mode)
+    return features, extract_trend_filter_metrics(features, feature_cols)
 
 
 def predict_probs(
@@ -72,6 +75,7 @@ def predict_probs(
     min_ma20_slope: float | None,
     min_ma60_slope: float | None,
     min_ma120_slope: float | None,
+    ha_feature_mode: str,
 ) -> List[Tuple[str, float]]:
     results: List[Tuple[str, float]] = []
     log_every = max(1, log_every)
@@ -108,7 +112,7 @@ def predict_probs(
                 if liq_sum < min_trans_amnt_sum:
                     continue
 
-            seq_info = _fetch_sequence(conn, table, code, seq_len, cutoff_date)
+            seq_info = _fetch_sequence(conn, table, code, seq_len, cutoff_date, ha_feature_mode)
             if seq_info is None:
                 continue
             seq, trend_metrics = seq_info
@@ -154,6 +158,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-encoder-layers", type=int, default=3)
     parser.add_argument("--dim-feedforward", type=int, default=512)
     parser.add_argument("--dropout", type=float, default=0.2)
+    parser.add_argument("--ha-feature-mode", choices=["none", "minimal"], default="none")
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--min-high-52w-ratio", type=float, default=0.85, help="52주 고점 근접 비율 최소값")
     parser.add_argument("--min-close-vs-ma20", type=float, default=-0.02, help="close_vs_ma20 최소값 (model_jp.py trend label 기본값과 일치)")
@@ -193,14 +198,14 @@ def main() -> None:
     effective_cutoff = min(requested_cutoff, max_date.isoformat()) if max_date else requested_cutoff
 
     model = StockTransformer(
-        input_size=len(RELATIVE_FEATURE_COLS),
+        input_size=len(get_feature_cols(args.ha_feature_mode)),
         d_model=args.d_model,
         nhead=args.nhead,
         num_encoder_layers=args.num_encoder_layers,
         dim_feedforward=args.dim_feedforward,
         dropout=args.dropout,
     )
-    model.load_state_dict(torch.load(args.model, map_location="cpu", weights_only=True))
+    model.load_state_dict(load_model_checkpoint(args.model, args.ha_feature_mode, map_location="cpu"))
     model.eval()
 
     results = predict_probs(
@@ -218,6 +223,7 @@ def main() -> None:
         args.min_ma20_slope,
         args.min_ma60_slope,
         args.min_ma120_slope,
+        args.ha_feature_mode,
     )
     print(f"infer done: {len(results)} results")
     results.sort(key=lambda x: x[1], reverse=True)

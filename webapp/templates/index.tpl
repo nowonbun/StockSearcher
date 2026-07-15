@@ -182,8 +182,10 @@
 
     .ptab-btn,
     .stab-btn,
+    .lstab-btn,
     .ptab-w-btn,
-    .stab-w-btn {
+    .stab-w-btn,
+    .lstab-w-btn {
       background: transparent;
       border: none;
       border-bottom: 3px solid transparent;
@@ -198,30 +200,38 @@
 
     .ptab-btn:hover,
     .stab-btn:hover,
+    .lstab-btn:hover,
     .ptab-w-btn:hover,
-    .stab-w-btn:hover {
+    .stab-w-btn:hover,
+    .lstab-w-btn:hover {
       color: var(--txt);
     }
 
     .ptab-btn.active,
     .stab-btn.active,
+    .lstab-btn.active,
     .ptab-w-btn.active,
-    .stab-w-btn.active {
+    .stab-w-btn.active,
+    .lstab-w-btn.active {
       color: var(--txt);
       border-bottom-color: var(--acc);
     }
 
     .ptab-panel,
     .stab-panel,
+    .lstab-panel,
     .ptab-w-panel,
-    .stab-w-panel {
+    .stab-w-panel,
+    .lstab-w-panel {
       display: none;
     }
 
     .ptab-panel.active,
     .stab-panel.active,
+    .lstab-panel.active,
     .ptab-w-panel.active,
-    .stab-w-panel.active {
+    .stab-w-panel.active,
+    .lstab-w-panel.active {
       display: block;
     }
 
@@ -355,9 +365,11 @@
         <li class="sidebar-heading">일봉</li>
         <li class="active" data-panel="panel-predict">Predict Search</li>
         <li data-panel="panel-scanner">UpperBand Scanner</li>
+        <li data-panel="panel-lowerband-scanner">LowerBand Scanner</li>
         <li class="sidebar-heading">주봉</li>
         <li data-panel="panel-predict-weekly">Predict Search</li>
         <li data-panel="panel-scanner-weekly">UpperBand Scanner</li>
+        <li data-panel="panel-lowerband-scanner-weekly">LowerBand Scanner</li>
       </ul>
     </div>
   </aside>
@@ -531,6 +543,67 @@
 
     </div>
 
+    <!-- ── LowerBand Scanner 패널 ── -->
+    <div id="panel-lowerband-scanner" class="panel">
+      <div class="panel-title">LowerBand Scanner</div>
+
+      <div class="predict-tabs">
+        <button class="lstab-btn active" data-lstab="lstab-jp">JP</button>
+        <button class="lstab-btn"        data-lstab="lstab-kr">KR</button>
+      </div>
+
+      <div id="lstab-jp" class="lstab-panel active">
+        <div class="search-form">
+          <div class="row" style="margin-bottom: 0">
+            <div class="input-field col s12 m4">
+              <select id="lowerband-scanner-jp-date"></select>
+              <label>Date</label>
+            </div>
+            <div class="input-field col s12 m3">
+              <input id="lowerband-scanner-jp-trans-amount" type="text">
+              <label for="lowerband-scanner-jp-trans-amount">trans_amnt_min</label>
+            </div>
+            <div class="input-field col s12 m3">
+              <input id="lowerband-scanner-jp-close-max" type="text">
+              <label for="lowerband-scanner-jp-close-max">close_max</label>
+            </div>
+            <div class="col s12 m2">
+              <div class="filter-actions">
+                <button id="lowerband-scanner-jp-btn" class="btnx">검색</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="lowerband-scanner-grid-jp" class="ag-theme-balham" style="height: 520px; width: 100%"></div>
+      </div>
+
+      <div id="lstab-kr" class="lstab-panel">
+        <div class="search-form">
+          <div class="row" style="margin-bottom: 0">
+            <div class="input-field col s12 m4">
+              <select id="lowerband-scanner-kr-date"></select>
+              <label>Date</label>
+            </div>
+            <div class="input-field col s12 m3">
+              <input id="lowerband-scanner-kr-trans-amount" type="text">
+              <label for="lowerband-scanner-kr-trans-amount">trans_amnt_min</label>
+            </div>
+            <div class="input-field col s12 m3">
+              <input id="lowerband-scanner-kr-close-max" type="text">
+              <label for="lowerband-scanner-kr-close-max">close_max</label>
+            </div>
+            <div class="col s12 m2">
+              <div class="filter-actions">
+                <button id="lowerband-scanner-kr-btn" class="btnx">검색</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="lowerband-scanner-grid-kr" class="ag-theme-balham" style="height: 520px; width: 100%"></div>
+      </div>
+
+    </div>
+
     <!-- ── Predict Search 주봉 패널 ── -->
     <div id="panel-predict-weekly" class="panel">
       <div class="panel-title">Predict Search <span style="font-size:13px;color:#85a3d4">(주봉)</span></div>
@@ -687,6 +760,67 @@
 
     </div>
 
+    <!-- ── LowerBand Scanner 주봉 패널 ── -->
+    <div id="panel-lowerband-scanner-weekly" class="panel">
+      <div class="panel-title">LowerBand Scanner <span style="font-size:13px;color:#85a3d4">(주봉)</span></div>
+
+      <div class="predict-tabs">
+        <button class="lstab-w-btn active" data-lstabw="lstab-w-jp">JP</button>
+        <button class="lstab-w-btn"        data-lstabw="lstab-w-kr">KR</button>
+      </div>
+
+      <div id="lstab-w-jp" class="lstab-w-panel active">
+        <div class="search-form">
+          <div class="row" style="margin-bottom: 0">
+            <div class="input-field col s12 m4">
+              <select id="lowerband-scanner-w-jp-date"></select>
+              <label>Date</label>
+            </div>
+            <div class="input-field col s12 m3">
+              <input id="lowerband-scanner-w-jp-trans-amount" type="text">
+              <label for="lowerband-scanner-w-jp-trans-amount">trans_amnt_min</label>
+            </div>
+            <div class="input-field col s12 m3">
+              <input id="lowerband-scanner-w-jp-close-max" type="text">
+              <label for="lowerband-scanner-w-jp-close-max">close_max</label>
+            </div>
+            <div class="col s12 m2">
+              <div class="filter-actions">
+                <button id="lowerband-scanner-w-jp-btn" class="btnx">검색</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="lowerband-scanner-grid-jp-w" class="ag-theme-balham" style="height: 520px; width: 100%"></div>
+      </div>
+
+      <div id="lstab-w-kr" class="lstab-w-panel">
+        <div class="search-form">
+          <div class="row" style="margin-bottom: 0">
+            <div class="input-field col s12 m4">
+              <select id="lowerband-scanner-w-kr-date"></select>
+              <label>Date</label>
+            </div>
+            <div class="input-field col s12 m3">
+              <input id="lowerband-scanner-w-kr-trans-amount" type="text">
+              <label for="lowerband-scanner-w-kr-trans-amount">trans_amnt_min</label>
+            </div>
+            <div class="input-field col s12 m3">
+              <input id="lowerband-scanner-w-kr-close-max" type="text">
+              <label for="lowerband-scanner-w-kr-close-max">close_max</label>
+            </div>
+            <div class="col s12 m2">
+              <div class="filter-actions">
+                <button id="lowerband-scanner-w-kr-btn" class="btnx">검색</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="lowerband-scanner-grid-kr-w" class="ag-theme-balham" style="height: 520px; width: 100%"></div>
+      </div>
+
+    </div>
+
     <!-- ── Batch Control 패널 ── -->
     <div id="panel-batch" class="panel">
       <div class="panel-title">Batch Control</div>
@@ -812,6 +946,22 @@ const scannerColDefs = [
     valueFormatter: p => n(p.value) },
 ];
 
+const lowerbandScannerColDefs = [
+  { field: 'date',            headerName: 'Date',      width: 108, sortable: true },
+  { field: 'code',            headerName: 'Code',      width: 88,  sortable: true },
+  { field: 'name',            headerName: 'Name',      flex: 1, minWidth: 130, sortable: true },
+  { field: 'close',           headerName: 'Close',     width: 100, sortable: true,
+    valueFormatter: p => n(p.value) },
+  { field: 'lowerband60_1',   headerName: 'LowerBand', width: 110, sortable: true,
+    valueFormatter: p => n(p.value) },
+  { field: 'ma60',            headerName: 'MA60',      width: 100, sortable: true,
+    valueFormatter: p => n(p.value) },
+  { field: 'lowerband_ratio', headerName: 'Ratio',     width: 85,  sortable: true,
+    valueFormatter: p => p.value != null ? Number(p.value).toFixed(4) : '' },
+  { field: 'transAmnt',       headerName: 'TransAmnt', width: 130, sortable: true, sort: 'desc',
+    valueFormatter: p => n(p.value) },
+];
+
 
 // ── 상태 변수 ────────────────────────────────────────────
 // 숨겨진 패널의 그리드는 처음 해당 탭/패널이 열릴 때 지연 초기화
@@ -820,10 +970,14 @@ let jpGrid              = null;
 let krGrid              = null;
 let scannerJpGrid       = null;
 let scannerKrGrid       = null;
+let lowerbandScannerJpGrid = null;
+let lowerbandScannerKrGrid = null;
 let jpWeeklyGrid        = null;
 let krWeeklyGrid        = null;
 let scannerJpWeeklyGrid = null;
 let scannerKrWeeklyGrid = null;
+let lowerbandScannerJpWeeklyGrid = null;
+let lowerbandScannerKrWeeklyGrid = null;
 
 
 // ── Predict 그리드 외부 필터 ─────────────────────────────
@@ -867,9 +1021,9 @@ function createPredictGrid(elId, prefix, market, isWeekly) {
   });
 }
 
-function createScannerGrid(elId, market, isWeekly) {
+function createScannerGrid(elId, market, isWeekly, columnDefs = scannerColDefs) {
   return agGrid.createGrid(document.getElementById(elId), {
-    columnDefs:        scannerColDefs,
+    columnDefs,
     rowData:           [],
     defaultColDef:     { resizable: true, suppressMovable: true },
     suppressCellFocus: true,
@@ -903,6 +1057,50 @@ async function openChart(market, code, name, asOf, isWeekly) {
   }
 }
 
+function buildHeikinAshiSeries(series) {
+  const haSeries = [];
+  let prevHaOpen = null;
+  let prevHaClose = null;
+
+  series.forEach((item, idx) => {
+    const open = Number(item.open);
+    const high = Number(item.high);
+    const low = Number(item.low);
+    const close = Number(item.close);
+
+    if (![open, high, low, close].every(Number.isFinite)) {
+      haSeries.push({
+        ...item,
+        haOpen: item.open,
+        haHigh: item.high,
+        haLow: item.low,
+        haClose: item.close,
+      });
+      return;
+    }
+
+    const haClose = (open + high + low + close) / 4;
+    const haOpen = idx === 0
+      ? (open + close) / 2
+      : (prevHaOpen + prevHaClose) / 2;
+    const haHigh = Math.max(high, haOpen, haClose);
+    const haLow = Math.min(low, haOpen, haClose);
+
+    haSeries.push({
+      ...item,
+      haOpen,
+      haHigh,
+      haLow,
+      haClose,
+    });
+
+    prevHaOpen = haOpen;
+    prevHaClose = haClose;
+  });
+
+  return haSeries;
+}
+
 function renderChart(divId, series, isWeekly) {
   if (!series.length) {
     document.getElementById(divId).innerHTML =
@@ -911,6 +1109,7 @@ function renderChart(divId, series, isWeekly) {
   }
 
   const dates = series.map(d => d.date);
+  const haSeries = buildHeikinAshiSeries(series);
   const maLine = (key, color, name) => ({
     type: 'scatter', mode: 'lines', x: dates, y: series.map(d => d[key]),
     name, line: { color, width: 1.2 }, hoverinfo: 'x+y',
@@ -920,11 +1119,11 @@ function renderChart(divId, series, isWeekly) {
     {
       type: 'candlestick',
       x: dates,
-      open:  series.map(d => d.open),
-      high:  series.map(d => d.high),
-      low:   series.map(d => d.low),
-      close: series.map(d => d.close),
-      name: 'OHLC',
+      open:  haSeries.map(d => d.haOpen),
+      high:  haSeries.map(d => d.haHigh),
+      low:   haSeries.map(d => d.haLow),
+      close: haSeries.map(d => d.haClose),
+      name: 'Heikin-Ashi',
       increasing: { line: { color: '#e05c5c' } },
       decreasing: { line: { color: '#4a9adc' } },
     },
@@ -987,6 +1186,38 @@ function initScannerTabs() {
           ]);
         } else {
           scannerKrGrid.sizeColumnsToFit();
+        }
+      }
+    });
+  });
+}
+
+// ── LowerBand Scanner 탭 전환 (JP / KR) ───────────────────
+function initLowerbandScannerTabs() {
+  const tabBtns = document.querySelectorAll('.lstab-btn');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const targetId = btn.dataset.lstab;
+      document.querySelectorAll('.lstab-panel').forEach(p => p.classList.remove('active'));
+      document.getElementById(targetId).classList.add('active');
+
+      if (targetId === 'lstab-jp') {
+        lowerbandScannerJpGrid?.sizeColumnsToFit();
+      }
+
+      if (targetId === 'lstab-kr') {
+        if (!lowerbandScannerKrGrid) {
+          lowerbandScannerKrGrid = createScannerGrid('lowerband-scanner-grid-kr', 'KR', false, lowerbandScannerColDefs);
+          await Promise.all([
+            loadDates('KR', 'lowerband-scanner-kr-date', '/api/scanner-dates'),
+            loadScannerDefaults('KR', 'lowerband-scanner-kr-trans-amount', 'lowerband-scanner-kr-close-max'),
+          ]);
+        } else {
+          lowerbandScannerKrGrid.sizeColumnsToFit();
         }
       }
     });
@@ -1082,6 +1313,18 @@ function initSidebarNav() {
         }
       }
 
+      if (targetId === 'panel-lowerband-scanner') {
+        if (!lowerbandScannerJpGrid) {
+          lowerbandScannerJpGrid = createScannerGrid('lowerband-scanner-grid-jp', 'JP', false, lowerbandScannerColDefs);
+          await Promise.all([
+            loadDates('JP', 'lowerband-scanner-jp-date', '/api/scanner-dates'),
+            loadScannerDefaults('JP', 'lowerband-scanner-jp-trans-amount', 'lowerband-scanner-jp-close-max'),
+          ]);
+        } else {
+          lowerbandScannerJpGrid.sizeColumnsToFit();
+        }
+      }
+
       stopBatchLogPoller();
       if (targetId === 'panel-batch') {
         loadBatchTasks();
@@ -1107,6 +1350,18 @@ function initSidebarNav() {
           ]);
         } else {
           scannerJpWeeklyGrid.sizeColumnsToFit();
+        }
+      }
+
+      if (targetId === 'panel-lowerband-scanner-weekly') {
+        if (!lowerbandScannerJpWeeklyGrid) {
+          lowerbandScannerJpWeeklyGrid = createScannerGrid('lowerband-scanner-grid-jp-w', 'JP', true, lowerbandScannerColDefs);
+          await Promise.all([
+            loadDates('JP', 'lowerband-scanner-w-jp-date', '/api/scanner-weekly-dates'),
+            loadScannerDefaults('JP', 'lowerband-scanner-w-jp-trans-amount', 'lowerband-scanner-w-jp-close-max', '/api/scanner-weekly-defaults'),
+          ]);
+        } else {
+          lowerbandScannerJpWeeklyGrid.sizeColumnsToFit();
         }
       }
     });
@@ -1169,6 +1424,38 @@ function initScannerWeeklyTabs() {
           ]);
         } else {
           scannerKrWeeklyGrid.sizeColumnsToFit();
+        }
+      }
+    });
+  });
+}
+
+// ── LowerBand Scanner 주봉 탭 전환 (JP / KR) ──────────────
+function initLowerbandScannerWeeklyTabs() {
+  const tabBtns = document.querySelectorAll('.lstab-w-btn');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const targetId = btn.dataset.lstabw;
+      document.querySelectorAll('.lstab-w-panel').forEach(p => p.classList.remove('active'));
+      document.getElementById(targetId).classList.add('active');
+
+      if (targetId === 'lstab-w-jp') {
+        lowerbandScannerJpWeeklyGrid?.sizeColumnsToFit();
+      }
+
+      if (targetId === 'lstab-w-kr') {
+        if (!lowerbandScannerKrWeeklyGrid) {
+          lowerbandScannerKrWeeklyGrid = createScannerGrid('lowerband-scanner-grid-kr-w', 'KR', true, lowerbandScannerColDefs);
+          await Promise.all([
+            loadDates('KR', 'lowerband-scanner-w-kr-date', '/api/scanner-weekly-dates'),
+            loadScannerDefaults('KR', 'lowerband-scanner-w-kr-trans-amount', 'lowerband-scanner-w-kr-close-max', '/api/scanner-weekly-defaults'),
+          ]);
+        } else {
+          lowerbandScannerKrWeeklyGrid.sizeColumnsToFit();
         }
       }
     });
@@ -1255,8 +1542,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSidebarNav();
   initPredictTabs();
   initScannerTabs();
+  initLowerbandScannerTabs();
   initPredictWeeklyTabs();
   initScannerWeeklyTabs();
+  initLowerbandScannerWeeklyTabs();
   initBatchPanel();
 
   // 차트 모달 닫기
@@ -1445,6 +1734,16 @@ document.getElementById('scanner-kr-btn')
   .addEventListener('click', () =>
     searchScanner('KR', 'scanner-kr-date', 'scanner-kr-trans-amount', 'scanner-kr-close-max', scannerKrGrid));
 
+// LowerBand Scanner JP
+document.getElementById('lowerband-scanner-jp-btn')
+  .addEventListener('click', () =>
+    searchScanner('JP', 'lowerband-scanner-jp-date', 'lowerband-scanner-jp-trans-amount', 'lowerband-scanner-jp-close-max', lowerbandScannerJpGrid, '/api/lowerband-scanner'));
+
+// LowerBand Scanner KR
+document.getElementById('lowerband-scanner-kr-btn')
+  .addEventListener('click', () =>
+    searchScanner('KR', 'lowerband-scanner-kr-date', 'lowerband-scanner-kr-trans-amount', 'lowerband-scanner-kr-close-max', lowerbandScannerKrGrid, '/api/lowerband-scanner'));
+
 // Predict 주봉 검색 버튼
 document.getElementById('predict-jp-w-btn')
   .addEventListener('click', () => { if (jpWeeklyGrid) searchPredicts('JP', 'as-of-jp-w', jpWeeklyGrid, '/api/predict-weekly'); });
@@ -1481,9 +1780,18 @@ document.getElementById('scanner-w-kr-btn')
   .addEventListener('click', () =>
     searchScanner('KR', 'scanner-w-kr-date', 'scanner-w-kr-trans-amount', 'scanner-w-kr-close-max', scannerKrWeeklyGrid, '/api/scanner-weekly'));
 
+// LowerBand Scanner 주봉 JP
+document.getElementById('lowerband-scanner-w-jp-btn')
+  .addEventListener('click', () =>
+    searchScanner('JP', 'lowerband-scanner-w-jp-date', 'lowerband-scanner-w-jp-trans-amount', 'lowerband-scanner-w-jp-close-max', lowerbandScannerJpWeeklyGrid, '/api/lowerband-scanner-weekly'));
+
+// LowerBand Scanner 주봉 KR
+document.getElementById('lowerband-scanner-w-kr-btn')
+  .addEventListener('click', () =>
+    searchScanner('KR', 'lowerband-scanner-w-kr-date', 'lowerband-scanner-w-kr-trans-amount', 'lowerband-scanner-w-kr-close-max', lowerbandScannerKrWeeklyGrid, '/api/lowerband-scanner-weekly'));
+
 </script>
 {/literal}
 
 </body>
 </html>
-

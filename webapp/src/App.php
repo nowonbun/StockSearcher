@@ -75,6 +75,18 @@ final class App
             $this->json(['rows' => $this->fetchUpperbandBreakoutsWeekly($market, $date, (float)$trans, (float)$closeMax)]);
             return;
         }
+        if ($method === 'GET' && $path === '/api/lowerband-scanner-weekly') {
+            $market = $this->market('JP');
+            $date = trim((string)($_GET['date'] ?? ''));
+            $trans = trim((string)($_GET['trans_amnt_min'] ?? ''));
+            $closeMax = trim((string)($_GET['close_max'] ?? ''));
+            if ($date === '' || $trans === '' || $closeMax === '') {
+                $this->text('missing date/trans_amnt_min/close_max', 400);
+                return;
+            }
+            $this->json(['rows' => $this->fetchLowerbandBreakoutsWeekly($market, $date, (float)$trans, (float)$closeMax)]);
+            return;
+        }
         if ($method === 'GET' && $path === '/api/scanner') {
             $market = $this->market('JP');
             $date = trim((string)($_GET['date'] ?? ''));
@@ -85,6 +97,18 @@ final class App
                 return;
             }
             $this->json(['rows' => $this->fetchUpperbandBreakouts($market, $date, (float)$trans, (float)$closeMax)]);
+            return;
+        }
+        if ($method === 'GET' && $path === '/api/lowerband-scanner') {
+            $market = $this->market('JP');
+            $date = trim((string)($_GET['date'] ?? ''));
+            $trans = trim((string)($_GET['trans_amnt_min'] ?? ''));
+            $closeMax = trim((string)($_GET['close_max'] ?? ''));
+            if ($date === '' || $trans === '' || $closeMax === '') {
+                $this->text('missing date/trans_amnt_min/close_max', 400);
+                return;
+            }
+            $this->json(['rows' => $this->fetchLowerbandBreakouts($market, $date, (float)$trans, (float)$closeMax)]);
             return;
         }
         if ($method === 'GET' && $path === '/api/series') {
@@ -393,6 +417,58 @@ final class App
                 'date' => substr((string)$r['date'], 0, 10), 'code' => $r['code'], 'name' => $r['name'],
                 'close' => $this->num($r['Close']), 'upperband60_1' => $this->num($r['UpperBand60_1']),
                 'transAmnt' => $this->num($r['transAmnt']), 'upperband_ratio' => $this->num($r['upperband_ratio']),
+            ];
+        }
+        return $rows;
+    }
+
+    private function fetchLowerbandBreakoutsWeekly(string $market, string $scanDate, float $trans, float $closeMax): array
+    {
+        $pdo = $this->pdo($market);
+        $sql = "
+            SELECT sd.date,sd.code,sl.name,sd.Close,sd.LowerBand60_1,sd.`60MvAvg` AS ma60,sd.TransAmnt AS transAmnt,
+                   (sd.Close/NULLIF(sd.LowerBand60_1,0)) AS lowerband_ratio
+            FROM {$this->weeklyDataTable($market)} sd
+            JOIN {$this->listTable($market)} sl ON sl.code = sd.code
+            WHERE sd.date=:d AND sd.LowerBand60_1 < sd.Close AND sd.Close < sd.`60MvAvg`
+              AND sd.TransAmnt > :t AND sd.Close < :c{$this->etfFilter($market, 'sl')}
+            ORDER BY sd.TransAmnt DESC
+        ";
+        $st = $pdo->prepare($sql);
+        $st->execute([':d' => $scanDate, ':t' => $trans, ':c' => $closeMax]);
+        $rows = [];
+        foreach ($st->fetchAll() as $r) {
+            $rows[] = [
+                'date' => substr((string)$r['date'], 0, 10), 'code' => $r['code'], 'name' => $r['name'],
+                'close' => $this->num($r['Close']), 'lowerband60_1' => $this->num($r['LowerBand60_1']),
+                'ma60' => $this->num($r['ma60']), 'transAmnt' => $this->num($r['transAmnt']),
+                'lowerband_ratio' => $this->num($r['lowerband_ratio']),
+            ];
+        }
+        return $rows;
+    }
+
+    private function fetchLowerbandBreakouts(string $market, string $scanDate, float $trans, float $closeMax): array
+    {
+        $pdo = $this->pdo($market);
+        $sql = "
+            SELECT sd.date,sd.code,sl.name,sd.Close,sd.LowerBand60_1,sd.`60MvAvg` AS ma60,sd.transAmnt,
+                   (sd.Close/NULLIF(sd.LowerBand60_1,0)) AS lowerband_ratio
+            FROM {$this->dataTable($market)} sd
+            JOIN {$this->listTable($market)} sl ON sl.code = sd.code
+            WHERE sd.date=:d AND sd.LowerBand60_1 < sd.Close AND sd.Close < sd.`60MvAvg`
+              AND sd.transAmnt > :t AND sd.Close < :c{$this->etfFilter($market, 'sl')}
+            ORDER BY sd.transAmnt DESC
+        ";
+        $st = $pdo->prepare($sql);
+        $st->execute([':d' => $scanDate, ':t' => $trans, ':c' => $closeMax]);
+        $rows = [];
+        foreach ($st->fetchAll() as $r) {
+            $rows[] = [
+                'date' => substr((string)$r['date'], 0, 10), 'code' => $r['code'], 'name' => $r['name'],
+                'close' => $this->num($r['Close']), 'lowerband60_1' => $this->num($r['LowerBand60_1']),
+                'ma60' => $this->num($r['ma60']), 'transAmnt' => $this->num($r['transAmnt']),
+                'lowerband_ratio' => $this->num($r['lowerband_ratio']),
             ];
         }
         return $rows;
