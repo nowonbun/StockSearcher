@@ -249,11 +249,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-every", type=int, default=50)
     parser.add_argument("--eval-threshold", type=float, default=0.60)
     parser.add_argument("--auto-threshold", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--threshold-sweep-start", type=float, default=0.70)
-    parser.add_argument("--threshold-sweep-end", type=float, default=0.95)
+    parser.add_argument("--threshold-sweep-start", type=float, default=0.55)
+    parser.add_argument("--threshold-sweep-end", type=float, default=0.85)
     parser.add_argument("--threshold-sweep-step", type=float, default=0.01)
-    parser.add_argument("--pos-rate", type=float, default=0.06)
-    parser.add_argument("--pos-weight-max", type=float, default=20)
+    parser.add_argument("--pos-rate", type=float, default=0.04)
+    parser.add_argument("--pos-weight-max", type=float, default=30)
     return parser.parse_args()
 
 

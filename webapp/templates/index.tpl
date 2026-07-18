@@ -829,7 +829,8 @@
         <div class="batch-group-label">JP</div>
         <div class="batch-btn-row">
           <button class="btnx batch-run-btn" data-task="dataset_jp">dataset_jp</button>
-          <button class="btnx batch-run-btn" data-task="predict_jp">predict_jp</button>
+          <button class="btnx batch-run-btn" data-task="predict_jp">predict_jp(v2)</button>
+          <button class="btnx batch-run-btn" data-task="predict_week_jp">predict_week_jp(v2)</button>
           <button class="btnx batch-run-btn" data-task="job_jp">JP 전체</button>
         </div>
       </div>
@@ -838,7 +839,8 @@
         <div class="batch-group-label">KR</div>
         <div class="batch-btn-row">
           <button class="btnx batch-run-btn" data-task="dataset_kr">dataset_kr</button>
-          <button class="btnx batch-run-btn" data-task="predict_kr">predict_kr</button>
+          <button class="btnx batch-run-btn" data-task="predict_kr">predict_kr(v2)</button>
+          <button class="btnx batch-run-btn" data-task="predict_week_kr">predict_week_kr(v2)</button>
           <button class="btnx batch-run-btn" data-task="job_kr">KR 전체</button>
         </div>
       </div>

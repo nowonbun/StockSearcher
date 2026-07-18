@@ -7,8 +7,8 @@ services:
       WEB_PORT: "9999"
       CRON_SCHEDULE_JP: "0 12,18 * * 1-5"
       CRON_SCHEDULE_KR: "0 14,20 * * 1-5"
-      JOB_CMD_JP: "python dataset_jp.py && python predict_jp.py --model /models/model_jp.pt --save-db && python predict_week_jp.py --model /models/model_week_jp.pt --save-db"
-      JOB_CMD_KR: "python dataset_kr.py && python predict_kr.py --model /models/model_kr.pt --save-db && python predict_week_kr.py --model /models/model_week_kr.pt --save-db"
+      JOB_CMD_JP: "python dataset_jp.py && python predict_jp_v2.py --model /models/model_jp_v2.pt --save-db && python predict_week_jp_v2.py --model /models/model_week_jp_v2.pt --save-db"
+      JOB_CMD_KR: "python dataset_kr.py && python predict_kr_v2.py --model /models/model_kr_v2.pt --save-db && python predict_week_kr_v2.py --model /models/model_week_kr_v2.pt --save-db"
       CRON_LOG_PATH: "/data/log/cron.log"
     volumes:
       - ./config.ini:/app/config.ini:ro

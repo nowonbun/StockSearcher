@@ -114,15 +114,21 @@ def _start_task(name: str, cmd: str) -> TaskState:
 
 
 def _job_cmds() -> Dict[str, str]:
-    jp_model = os.environ.get("PREDICT_JP_MODEL", "/models/model_jp.pt")
-    kr_model = os.environ.get("PREDICT_KR_MODEL", "/models/model_kr.pt")
-    jp_predict = f"python predict_jp.py --model {jp_model} --save-db"
-    kr_predict = f"python predict_kr.py --model {kr_model} --save-db"
+    jp_model = os.environ.get("PREDICT_JP_V2_MODEL", "/models/model_jp_v2.pt")
+    kr_model = os.environ.get("PREDICT_KR_V2_MODEL", "/models/model_kr_v2.pt")
+    week_jp_model = os.environ.get("PREDICT_WEEK_JP_V2_MODEL", "/models/model_week_jp_v2.pt")
+    week_kr_model = os.environ.get("PREDICT_WEEK_KR_V2_MODEL", "/models/model_week_kr_v2.pt")
+    jp_predict = f"python predict_jp_v2.py --model {jp_model} --save-db"
+    kr_predict = f"python predict_kr_v2.py --model {kr_model} --save-db"
+    week_jp_predict = f"python predict_week_jp_v2.py --model {week_jp_model} --save-db"
+    week_kr_predict = f"python predict_week_kr_v2.py --model {week_kr_model} --save-db"
     return {
         "dataset_jp": "python dataset_jp.py",
         "predict_jp": jp_predict,
+        "predict_week_jp": week_jp_predict,
         "dataset_kr": "python dataset_kr.py",
         "predict_kr": kr_predict,
+        "predict_week_kr": week_kr_predict,
         "job_jp": os.environ.get(
             "JOB_CMD_JP",
             os.environ.get("JOB_CMD_JP2", f"python dataset_jp.py && {jp_predict}"),
