@@ -95,7 +95,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dim-feedforward", type=int, default=512)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--top-k", type=int, default=30)
-    parser.add_argument("--min-prob", type=float, default=0.60)
+    parser.add_argument("--min-prob", type=float, default=None)
     parser.add_argument("--log-every", type=int, default=200)
     parser.add_argument("--save-db", action="store_true")
     parser.add_argument("--run-name", default=None)
@@ -148,7 +148,7 @@ def main() -> None:
         print("no results")
         return
 
-    print("code,prob")
+    print("code,upside_probability")
     for code, prob in top:
         print(f"{code},{prob:.6f}")
 

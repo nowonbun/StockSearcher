@@ -27,7 +27,7 @@ from model_week_kr import (
     load_codes,
 )
 
-V2_MODEL_MODE = "v2_reversal_week_kr"
+V2_MODEL_MODE = "v2_upside_probability_week_kr"
 V2_FEATURE_COLS = [
     "close_vs_lowerband60_1",
     "band_pos_60_1",
@@ -90,14 +90,8 @@ class WindowIterableDatasetV2(IterableDataset):
         split: str,
         log_codes: bool,
         log_every: int,
-        max_drawdown: float = 0.08,
         min_trans_amnt_sum: float | None = None,
         liquidity_days: int = 5,
-        reversal_close_vs_lowerband_max: float = 0.015,
-        reversal_band_pos_max: float = 0.20,
-        reversal_drawdown20_max: float = -0.10,
-        reversal_min_weakness_score: int = 3,
-        reversal_min_ha_body_ratio: float = 0.30,
     ):
         super().__init__()
         self.table = table
@@ -111,14 +105,8 @@ class WindowIterableDatasetV2(IterableDataset):
         self.split = split
         self.log_codes = log_codes
         self.log_every = max(1, log_every)
-        self.max_drawdown = max_drawdown
         self.min_trans_amnt_sum = min_trans_amnt_sum
         self.liquidity_days = liquidity_days
-        self.reversal_close_vs_lowerband_max = reversal_close_vs_lowerband_max
-        self.reversal_band_pos_max = reversal_band_pos_max
-        self.reversal_drawdown20_max = reversal_drawdown20_max
-        self.reversal_min_weakness_score = reversal_min_weakness_score
-        self.reversal_min_ha_body_ratio = reversal_min_ha_body_ratio
         if self.liquidity_days > self.seq_len:
             raise ValueError("liquidity_days cannot exceed seq_len")
 
@@ -145,10 +133,6 @@ class WindowIterableDatasetV2(IterableDataset):
                     raw = np.array([r[1:] for r in rows], dtype=np.float32)
                     closes = raw[:, CLOSE_INDEX].astype(np.float64)
                     features = compute_v2_features(raw)
-                    feature_idx = {name: i for i, name in enumerate(V2_FEATURE_COLS)}
-                    ha_close, ha_open, _, _ = _build_ha_series(raw)
-                    ha_bullish = ha_close > ha_open
-
                     max_start = len(features) - (self.seq_len + self.horizon_days) + 1
                     if max_start <= 0:
                         continue
@@ -177,33 +161,8 @@ class WindowIterableDatasetV2(IterableDataset):
                         if future_idx >= len(closes):
                             continue
 
-                        weakness_score = 0
-                        if float(features[end_idx, feature_idx["close_vs_lowerband60_1"]]) <= self.reversal_close_vs_lowerband_max:
-                            weakness_score += 1
-                        if float(features[end_idx, feature_idx["band_pos_60_1"]]) <= self.reversal_band_pos_max:
-                            weakness_score += 1
-                        if float(features[end_idx, feature_idx["drawdown_20d"]]) <= self.reversal_drawdown20_max:
-                            weakness_score += 1
-
-                        reversal_trigger = (
-                            bool(ha_bullish[end_idx])
-                            and not bool(ha_bullish[end_idx - 1])
-                            and float(features[end_idx, feature_idx["ha_body_ratio"]]) >= self.reversal_min_ha_body_ratio
-                        )
-
-                        target = base * (1.0 + self.rise_threshold)
-                        future_window = closes[end_idx + 1:future_idx + 1]
-                        if future_window.size == 0:
-                            continue
-                        future_max_close = float(future_window.max())
-                        max_pullback = float(future_window.min() / (base + 1e-10) - 1.0)
-
-                        label = 1.0 if (
-                            weakness_score >= self.reversal_min_weakness_score
-                            and reversal_trigger
-                            and future_max_close >= target
-                            and max_pullback >= -self.max_drawdown
-                        ) else 0.0
+                        future_close = closes[future_idx]
+                        label = 1.0 if future_close >= base * (1.0 + self.rise_threshold) else 0.0
 
                         x = features[i:i + self.seq_len].copy()
                         yield torch.from_numpy(x), torch.tensor(label, dtype=torch.float32)
@@ -219,14 +178,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seq-len", type=int, default=120)
     parser.add_argument("--horizon-days", type=int, default=20)
     parser.add_argument("--rise-threshold", type=float, default=0.09)
-    parser.add_argument("--max-drawdown", type=float, default=0.08)
     parser.add_argument("--min-trans-amnt-sum", type=float, default=1_000_000_000)
     parser.add_argument("--liquidity-days", type=int, default=5)
-    parser.add_argument("--reversal-close-vs-lowerband-max", type=float, default=0.015)
-    parser.add_argument("--reversal-band-pos-max", type=float, default=0.20)
-    parser.add_argument("--reversal-drawdown20-max", type=float, default=-0.10)
-    parser.add_argument("--reversal-min-weakness-score", type=int, default=3)
-    parser.add_argument("--reversal-min-ha-body-ratio", type=float, default=0.30)
     parser.add_argument("--val-ratio", type=float, default=0.2)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=30)
@@ -249,10 +202,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-every", type=int, default=50)
     parser.add_argument("--eval-threshold", type=float, default=0.60)
     parser.add_argument("--auto-threshold", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--threshold-sweep-start", type=float, default=0.55)
-    parser.add_argument("--threshold-sweep-end", type=float, default=0.85)
+    parser.add_argument("--threshold-sweep-start", type=float, default=0.35)
+    parser.add_argument("--threshold-sweep-end", type=float, default=0.70)
     parser.add_argument("--threshold-sweep-step", type=float, default=0.01)
-    parser.add_argument("--pos-rate", type=float, default=0.04)
+    parser.add_argument("--pos-rate", type=float, default=None)
     parser.add_argument("--pos-weight-max", type=float, default=30)
     return parser.parse_args()
 
@@ -318,14 +271,8 @@ def main() -> None:
         "train",
         args.log_codes,
         args.log_every,
-        args.max_drawdown,
         args.min_trans_amnt_sum,
         args.liquidity_days,
-        args.reversal_close_vs_lowerband_max,
-        args.reversal_band_pos_max,
-        args.reversal_drawdown20_max,
-        args.reversal_min_weakness_score,
-        args.reversal_min_ha_body_ratio,
     )
     val_ds = WindowIterableDatasetV2(
         args.table,
@@ -339,14 +286,8 @@ def main() -> None:
         "val",
         args.log_codes,
         args.log_every,
-        args.max_drawdown,
         args.min_trans_amnt_sum,
         args.liquidity_days,
-        args.reversal_close_vs_lowerband_max,
-        args.reversal_band_pos_max,
-        args.reversal_drawdown20_max,
-        args.reversal_min_weakness_score,
-        args.reversal_min_ha_body_ratio,
     )
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
